@@ -1,6 +1,7 @@
 package wire
 
 import (
+	"fmt"
 	"io"
 	"time"
 
@@ -16,50 +17,60 @@ type (
 	TransportConfig struct {
 		ListenAddress  string
 		SessTimeoutSec int
-		MemPool        mpool.Pool
-		ModelDesc      model.Descriptor
-		JrnlController journal.Controller
 	}
 
 	Transport struct {
-		logger    log4g.Logger
-		zserver   io.Closer
-		memPool   mpool.Pool
-		mdesc     model.Descriptor
-		jrnlCtrlr journal.Controller
+		MemPool   mpool.Pool          `inject:"mPool"`
+		ModelDesc model.Descriptor    `inject:"mdlDesc"`
+		JrnlCtrlr *journal.Controller `inject:""`
+
+		logger  log4g.Logger
+		zserver io.Closer
+		tcfg    TransportConfig
 	}
 )
 
-func NewTransport(tcfg *TransportConfig) (*Transport, error) {
-	var err error
+func NewTransport(tcfg *TransportConfig) *Transport {
 	t := new(Transport)
-	t.memPool = tcfg.MemPool
 	t.logger = log4g.GetLogger("wire.Transport")
-	t.mdesc = tcfg.ModelDesc
-	t.jrnlCtrlr = tcfg.JrnlController
-
-	var scfg zebra.ServerConfig
-	scfg.ListenAddress = tcfg.ListenAddress
-	scfg.SessTimeoutMs = int(time.Duration(tcfg.SessTimeoutSec) * time.Second / time.Millisecond)
-	scfg.Auth = noAuthFunc
-	scfg.ConnListener = t
-	t.zserver, err = zebra.NewTcpServer(&scfg)
-	if err != nil {
-		return nil, err
-	}
-
-	return t, nil
+	t.tcfg = *tcfg
+	return t
 }
 
-func (t *Transport) Shutdown() {
+func (t *Transport) DiPhase() int {
+	return 100
+}
+
+func (t *Transport) DiInit() error {
+	var scfg zebra.ServerConfig
+	scfg.ListenAddress = t.tcfg.ListenAddress
+	scfg.SessTimeoutMs = int(time.Duration(t.tcfg.SessTimeoutSec) * time.Second / time.Millisecond)
+	scfg.Auth = noAuthFunc
+	scfg.ConnListener = t
+
+	var err error
+	t.zserver, err = zebra.NewTcpServer(&scfg)
+	if err != nil {
+		return err
+	}
+	return nil
+}
+
+func (t *Transport) DiShutdown() {
 	t.logger.Info("Shutting down")
-	t.zserver.Close()
+	if t.zserver != nil {
+		t.zserver.Close()
+	}
+}
+
+func (t *Transport) String() string {
+	return fmt.Sprint("Transport:{ListenOn=", t.tcfg.ListenAddress, ", sessTOSec=", t.tcfg.SessTimeoutSec, "}")
 }
 
 // ------------------------- zebra.ServerListener ----------------------------
 func (t *Transport) OnRead(r zebra.Reader, n int) error {
-	buf := t.memPool.GetBtsBuf(n)
-	defer t.memPool.ReleaseBtsBuf(buf)
+	buf := t.MemPool.GetBtsBuf(n)
+	defer t.MemPool.ReleaseBtsBuf(buf)
 
 	rd, err := r.Read(buf)
 	if rd != n || err != nil {
@@ -70,15 +81,15 @@ func (t *Transport) OnRead(r zebra.Reader, n int) error {
 	var header [10]interface{}
 	var offs int
 	meta := model.Event(header[:])
-	offs, err = model.UnmarshalEvent(t.mdesc.EventGroupMeta(), buf, meta)
+	offs, err = model.UnmarshalEvent(t.ModelDesc.EventGroupMeta(), buf, meta)
 	if err != nil {
 		t.logger.Error("Could not unmarshal header err=", err)
 		return err
 	}
 
-	jid := t.mdesc.GetJournalId(meta)
+	jid := t.ModelDesc.GetJournalId(meta)
 	var jrnl *journal.Journal
-	jrnl, err = t.jrnlCtrlr.GetJournal(jid)
+	jrnl, err = t.JrnlCtrlr.GetJournal(jid)
 	if err != nil {
 		t.logger.Error("Could not get journal by jid=", jid, ", err=", err)
 		return err

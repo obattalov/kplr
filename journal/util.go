@@ -8,8 +8,12 @@ import (
 )
 
 func scanForJournals(dir string) ([]string, error) {
+	err := ensureDirExists(dir)
+	if err != nil {
+		return nil, err
+	}
 	res := make([]string, 0, 10)
-	err := filepath.Walk(dir, func(pth string, info os.FileInfo, err error) error {
+	err = filepath.Walk(dir, func(pth string, info os.FileInfo, err error) error {
 		if !info.IsDir() {
 			return nil
 		}

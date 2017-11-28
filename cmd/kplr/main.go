@@ -7,8 +7,13 @@ import (
 	"os"
 	"os/signal"
 
+	"github.com/jrivets/inject"
 	"github.com/jrivets/log4g"
 	"github.com/kplr-io/kplr"
+	"github.com/kplr-io/kplr/journal"
+	"github.com/kplr-io/kplr/model/k8s"
+	"github.com/kplr-io/kplr/mpool"
+	"github.com/kplr-io/kplr/wire"
 )
 
 func main() {
@@ -25,10 +30,27 @@ func main() {
 	}
 
 	kplr.DefaultLogger.Info("Kepler is starting...")
+	injector := inject.NewInjector(log4g.GetLogger("pixty.injector"), log4g.GetLogger("fb.injector"))
 
-	_, cancel := context.WithCancel(context.Background())
+	mainCtx, cancel := context.WithCancel(context.Background())
 	defer kplr.DefaultLogger.Info("Exiting. kplr main context is shutdown.")
+	defer injector.Shutdown()
 	defer cancel()
+
+	mpl := mpool.NewPool()
+	mDesc := k8s.NewDescriptor()
+	transp := wire.NewTransport(&wire.TransportConfig{
+		ListenAddress:  cfg.ListenOn,
+		SessTimeoutSec: kplr.GetIntVal(cfg.SessionTimeoutSec, 0),
+	})
+	jctrlr := journal.NewJournalCtrlr(&journal.JournalConfig{Dir: cfg.JournalsDir})
+
+	injector.RegisterOne(jctrlr, "")
+	injector.RegisterOne(transp, "")
+	injector.RegisterOne(mDesc, "mdlDesc")
+	injector.RegisterOne(mpl, "mPool")
+	injector.RegisterOne(mainCtx, "mainCtx")
+	injector.Construct()
 
 	signalChan := make(chan os.Signal, 1)
 	signal.Notify(signalChan, os.Interrupt)

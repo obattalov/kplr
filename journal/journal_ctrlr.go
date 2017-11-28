@@ -2,6 +2,7 @@ package journal
 
 import (
 	"errors"
+	"fmt"
 	"sync"
 
 	"github.com/jrivets/log4g"
@@ -33,17 +34,25 @@ type (
 	}
 )
 
-func NewJournalCtrlr(jcfg *JournalConfig) (*Controller, error) {
+func NewJournalCtrlr(jcfg *JournalConfig) *Controller {
 	jc := new(Controller)
 	jc.journals = make(map[string]*Journal)
 	jc.dir = jcfg.Dir
-	jc.logger = log4g.GetLogger("ppln.JournalCtrlr")
+	jc.logger = log4g.GetLogger("journal.Controller")
 	jc.logger.Info("Just created dir=", jc.dir)
+	return jc
+}
 
+func (jc *Controller) DiPhase() int {
+	return 0
+}
+
+func (jc *Controller) DiInit() error {
+	jc.logger.Info("Initializing. Will scan ", jc.dir)
 	jids, err := scanForJournals(jc.dir)
 	if err != nil {
 		jc.logger.Error("Could not scan the folder dir=", jc.dir, ", err=", err)
-		return nil, err
+		return err
 	}
 
 	jc.lock.Lock()
@@ -56,10 +65,10 @@ func NewJournalCtrlr(jcfg *JournalConfig) (*Controller, error) {
 			jc.logger.Warn("Could not open journal ", jid, ", err=", err)
 		}
 	}
-	return jc, nil
+	return nil
 }
 
-func (jc *Controller) Shutdown() {
+func (jc *Controller) DiShutdown() {
 	jc.lock.Lock()
 	defer jc.lock.Unlock()
 
@@ -73,6 +82,10 @@ func (jc *Controller) Shutdown() {
 		j.shutdown()
 	}
 	jc.journals = make(map[string]*Journal)
+}
+
+func (jc *Controller) String() string {
+	return fmt.Sprint("journal.Controller{dir=", jc.dir, "}")
 }
 
 func (jc *Controller) GetJournal(jid string) (*Journal, error) {
