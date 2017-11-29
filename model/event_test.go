@@ -42,3 +42,15 @@ func TestGeneral(t *testing.T) {
 		t.Fatal("ev=", ev, ", must be equal to ev2=", ev2)
 	}
 }
+
+func TestMarshalString(t *testing.T) {
+	str := "hello str"
+	buf := make([]byte, len(str)+4)
+	n, err := MarshalString(str, buf)
+	if err != nil {
+		t.Fatal("Should be enough space, but err=", err)
+	}
+	if n != len(str)+4 {
+		t.Fatal("expected string marshal size is ", len(str)+4, ", but actual is ", n)
+	}
+}

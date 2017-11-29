@@ -1,6 +1,7 @@
 package wire
 
 import (
+	"errors"
 	"fmt"
 	"io"
 	"time"
@@ -78,10 +79,21 @@ func (t *Transport) OnRead(r zebra.Reader, n int) error {
 		return err
 	}
 
+	var bbi container.BtsBufIterator
+	err = bbi.Reset(buf)
+	if err != nil {
+		t.logger.Error("Unexpected data: err=", err)
+		return err
+	}
+
+	if bbi.End() {
+		t.logger.Error("At least header is expected, but got empty bytes buffer")
+		return errors.New("empty list")
+	}
+
 	var header [10]interface{}
-	var offs int
 	meta := model.Event(header[:])
-	offs, err = model.UnmarshalEvent(t.ModelDesc.EventGroupMeta(), buf, meta)
+	_, err = model.UnmarshalEvent(t.ModelDesc.EventGroupMeta(), bbi.Get(), meta)
 	if err != nil {
 		t.logger.Error("Could not unmarshal header err=", err)
 		return err
@@ -95,13 +107,7 @@ func (t *Transport) OnRead(r zebra.Reader, n int) error {
 		return err
 	}
 
-	var bbi container.BtsBufIterator
-	err = bbi.Reset(buf[offs:])
-	if err != nil {
-		t.logger.Error("Unexpected data: err=", err)
-		return err
-	}
-
+	bbi.Next()
 	err = jrnl.Write(&bbi)
 	if err != nil {
 		t.logger.Error("Could not store data to journal ", jid, ", err=", err)

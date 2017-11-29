@@ -130,7 +130,7 @@ func newJournal(jc *Controller, dir, jid string) *Journal {
 	j.dir = dir
 	j.jid = jid
 	j.jctrlr = jc
-	j.logger = log4g.GetLogger("ppln.Journal").WithId("{" + jid + "}").(log4g.Logger)
+	j.logger = log4g.GetLogger("journal.Journal").WithId("{" + jid + "}").(log4g.Logger)
 	j.logger.Info("Just created")
 	go func() {
 		j.lock.Lock()
