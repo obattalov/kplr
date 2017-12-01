@@ -1,7 +1,7 @@
 package wire
 
 import (
-	"github.com/kplr-io/container"
+	"github.com/kplr-io/container/btsbuf"
 	"github.com/kplr-io/kplr/model"
 )
 
@@ -9,7 +9,7 @@ type (
 	Writer struct {
 		encoder model.MessageEncoder
 		hdrMeta model.Meta
-		bbw     container.BtsBufWriter
+		bbw     btsbuf.Writer
 	}
 )
 

@@ -7,7 +7,7 @@ import (
 	"time"
 
 	"github.com/jrivets/log4g"
-	"github.com/kplr-io/container"
+	"github.com/kplr-io/container/btsbuf"
 	"github.com/kplr-io/kplr/journal"
 	"github.com/kplr-io/kplr/model"
 	"github.com/kplr-io/kplr/mpool"
@@ -79,7 +79,7 @@ func (t *Transport) OnRead(r zebra.Reader, n int) error {
 		return err
 	}
 
-	var bbi container.BtsBufIterator
+	var bbi btsbuf.Reader
 	err = bbi.Reset(buf)
 	if err != nil {
 		t.logger.Error("Unexpected data: err=", err)
