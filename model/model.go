@@ -1,6 +1,8 @@
 package model
 
 import (
+	"time"
+
 	"github.com/kplr-io/container/btsbuf"
 )
 
@@ -27,6 +29,9 @@ type (
 
 	// The SimpleMessageEncoder simply transforms a string message to slice of bytes
 	SimpleMessageEncoder struct{}
+
+	// SimpleLogEventEncoder encode lines to LogEvents, it sets encoding timestamp
+	SimpleLogEventEncoder struct{}
 )
 
 func (sme *SimpleMessageEncoder) Encode(msg string, bbw *btsbuf.Writer) error {
@@ -37,4 +42,16 @@ func (sme *SimpleMessageEncoder) Encode(msg string, bbw *btsbuf.Writer) error {
 	}
 	copy(res, bf)
 	return nil
+}
+
+func (sle *SimpleLogEventEncoder) Encode(msg string, bbw *btsbuf.Writer) error {
+	var le LogEvent
+	ts := uint64(time.Now().UnixNano() / int64(time.Millisecond))
+	le.Reset(ts, msg)
+	rb, err := bbw.Allocate(le.BufSize())
+	if err != nil {
+		return err
+	}
+	_, err = le.Marshal(rb)
+	return err
 }

@@ -91,7 +91,7 @@ func newConn(addr string, maxLines int, jrnlId string) (*conn, error) {
 	c.maxLines = maxLines
 	c.jrnlId = jrnlId
 	c.lines = make([]string, 0, maxLines)
-	c.pktWriter = wire.NewWriter(&model.SimpleMessageEncoder{}, k8s.MetaDesc)
+	c.pktWriter = wire.NewWriter(&model.SimpleLogEventEncoder{}, k8s.MetaDesc)
 	c.logger = log4g.GetLogger("conn")
 	c.logger.Info("Will connct to ", addr, " writing by ", maxLines, " lines per packet. jrnlId=", jrnlId)
 	return c, nil

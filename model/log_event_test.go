@@ -35,3 +35,13 @@ func BenchmarkUnmarshalLogEventSlow(b *testing.B) {
 		le.UnmarshalCopy(store[:])
 	}
 }
+
+func TestBufSize(t *testing.T) {
+	var le LogEvent
+	le.Reset(123412341234123, "ha ha ha")
+	bf := make([]byte, le.BufSize())
+	n, err := le.Marshal(bf)
+	if n != len(bf) || err != nil {
+		t.Fatal("Expecting n=", n, " == ", len(bf), ", err=", err)
+	}
+}
