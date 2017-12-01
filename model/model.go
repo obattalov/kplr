@@ -1,7 +1,7 @@
 package model
 
 import (
-	"github.com/kplr-io/container"
+	"github.com/kplr-io/container/btsbuf"
 )
 
 type (
@@ -22,14 +22,14 @@ type (
 	// to a slice of bytes
 	MessageEncoder interface {
 		// Encode takes a text message msg and writes it to the bytes buffer
-		Encode(msg string, bbw *container.BtsBufWriter) error
+		Encode(msg string, bbw *btsbuf.Writer) error
 	}
 
 	// The SimpleMessageEncoder simply transforms a string message to slice of bytes
 	SimpleMessageEncoder struct{}
 )
 
-func (sme *SimpleMessageEncoder) Encode(msg string, bbw *container.BtsBufWriter) error {
+func (sme *SimpleMessageEncoder) Encode(msg string, bbw *btsbuf.Writer) error {
 	bf := []byte(msg)
 	res, err := bbw.Allocate(len(bf))
 	if err != nil {

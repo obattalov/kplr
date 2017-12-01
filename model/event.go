@@ -4,6 +4,7 @@ import (
 	"encoding/binary"
 	"errors"
 	"fmt"
+	"unsafe"
 )
 
 type (
@@ -18,9 +19,17 @@ const (
 	FTString = 3
 )
 
+const FLD_PER_EVENT = 16
+
 var (
 	errUnkonwnFiledType = errors.New("unknown field data type")
 )
+
+func (ev *Event) Clear() {
+	for i := 0; i < len(*ev); i++ {
+		(*ev)[i] = nil
+	}
+}
 
 // Size returns size of a byte buffer which is required to serialize the object
 // using the m meta information
@@ -81,6 +90,9 @@ func MarshalEvent(meta Meta, ev Event, buf []byte) (int, error) {
 	return idx, nil
 }
 
+// UnmarshalEvent unmarshal event using the buffer, no mem allocations will
+// happen here. Unmarshaled strings will have references to the buf slices,
+// so buf must not be modified while the event is used.
 func UnmarshalEvent(meta Meta, buf []byte, ev Event) (int, error) {
 	idx, fldHeader, err := UnmarshalUint16(buf)
 	if err != nil {
@@ -108,6 +120,47 @@ func UnmarshalEvent(meta Meta, buf []byte, ev Event) (int, error) {
 			ev[i] = v
 		case FTString:
 			n, v, err := UnmarshalString(buf[idx:])
+			if err != nil {
+				return 0, err
+			}
+			idx += n
+			ev[i] = v
+		default:
+			return 0, errUnkonwnFiledType
+		}
+	}
+	return idx, nil
+}
+
+// UnmarshalEventCopy safe, but slow unmarshaling procedure, it will make extra
+// memory allocations for string fields.
+func UnmarshalEventCopy(meta Meta, buf []byte, ev Event) (int, error) {
+	idx, fldHeader, err := UnmarshalUint16(buf)
+	if err != nil {
+		return 0, err
+	}
+	for i, ft := range meta {
+		if fldHeader&(1<<uint(i)) == 0 {
+			ev[i] = nil
+			continue
+		}
+		switch ft {
+		case FTUint16:
+			n, v, err := UnmarshalUint16(buf[idx:])
+			if err != nil {
+				return 0, err
+			}
+			idx += n
+			ev[i] = v
+		case FTInt64:
+			n, v, err := UnmarshalInt64(buf[idx:])
+			if err != nil {
+				return 0, err
+			}
+			idx += n
+			ev[i] = v
+		case FTString:
+			n, v, err := UnmarshalStringCopy(buf[idx:])
 			if err != nil {
 				return 0, err
 			}
@@ -157,11 +210,16 @@ func MarshalString(v string, buf []byte) (int, error) {
 		return 0, noBufErr("MarshalString-size-body", bl, ln+4)
 	}
 	binary.BigEndian.PutUint32(buf, uint32(ln))
-	copy(buf[4:ln+4], []byte(v))
+	var src = buf[4 : ln+4]
+	dst := src
+	src = *(*[]byte)(unsafe.Pointer(&v))
+	copy(dst, src)
 	return ln + 4, nil
 }
 
-func UnmarshalString(buf []byte) (int, string, error) {
+// UnmarshalStringCopy uses cast of []byte -> string, it is slow version
+// becuase it requires an allocation of the new memory segment and copying it
+func UnmarshalStringCopy(buf []byte) (int, string, error) {
 	if len(buf) < 4 {
 		return 0, "", noBufErr("UnmarshalString-size", len(buf), 4)
 	}
@@ -170,6 +228,22 @@ func UnmarshalString(buf []byte) (int, string, error) {
 		return 0, "", noBufErr("UnmarshalString-body", len(buf), ln+4)
 	}
 	return ln + 4, string(buf[4 : ln+4]), nil
+}
+
+// UnmarshalString fastest, but not completely safe version of unmarshalling
+// the byte buffer to string. Please use with care and keep in mind that buf must not
+// be updated so as it will affect the string context then.
+func UnmarshalString(buf []byte) (int, string, error) {
+	if len(buf) < 4 {
+		return 0, "", noBufErr("UnmarshalString-size", len(buf), 4)
+	}
+	ln := int(binary.BigEndian.Uint32(buf))
+	if ln+4 > len(buf) {
+		return 0, "", noBufErr("UnmarshalString-body", len(buf), ln+4)
+	}
+	bs := buf[4 : ln+4]
+	res := *(*string)(unsafe.Pointer(&bs))
+	return ln + 4, res, nil
 }
 
 func noBufErr(src string, ln, req int) error {

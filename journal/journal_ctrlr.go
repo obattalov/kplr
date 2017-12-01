@@ -6,7 +6,7 @@ import (
 	"sync"
 
 	"github.com/jrivets/log4g"
-	"github.com/kplr-io/container"
+	"github.com/kplr-io/container/btsbuf"
 	"github.com/kplr-io/journal"
 )
 
@@ -160,7 +160,7 @@ func (j *Journal) shutdown() {
 	j.jrnl.Close()
 }
 
-func (j *Journal) Write(bbi *container.BtsBufIterator) error {
+func (j *Journal) Write(bbi btsbuf.Iterator) error {
 	<-j.ready
 	j.lock.Lock()
 	jrnl := j.jrnl
