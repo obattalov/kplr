@@ -6,14 +6,16 @@ import (
 
 type (
 	LogEvent struct {
-		ts  int64
-		src string
+		ts   int64
+		src  string
+		tags string
 	}
 )
 
-func (le *LogEvent) Reset(ts uint64, src string) {
+func (le *LogEvent) Reset(ts uint64, src, tags string) {
 	le.ts = int64(ts)
 	le.src = src
+	le.tags = tags
 }
 
 func (le *LogEvent) Source() string {
@@ -24,9 +26,13 @@ func (le *LogEvent) Timestamp() uint64 {
 	return uint64(le.ts)
 }
 
+func (le *LogEvent) Tags() string {
+	return le.tags
+}
+
 // BufSize returns size of marshalled data
 func (le *LogEvent) BufSize() int {
-	return 12 + len(le.src)
+	return 16 + len(le.src) + len(le.tags)
 }
 
 func (le *LogEvent) Marshal(buf []byte) (int, error) {
@@ -34,7 +40,15 @@ func (le *LogEvent) Marshal(buf []byte) (int, error) {
 	if err != nil {
 		return 0, err
 	}
+
 	n1, err := MarshalString(le.src, buf[n:])
+	if err != nil {
+		return 0, err
+	}
+
+	n += n1
+	n1, err = MarshalString(le.tags, buf[n:])
+
 	return n + n1, err
 }
 
@@ -43,8 +57,16 @@ func (le *LogEvent) Unmarshal(buf []byte) (n int, err error) {
 	if err != nil {
 		return 0, err
 	}
+
 	var n1 int
 	n1, le.src, err = UnmarshalString(buf[n:])
+	if err != nil {
+		return
+	}
+
+	n += n1
+	n1, le.tags, err = UnmarshalString(buf[n:])
+
 	return n + n1, err
 }
 
@@ -55,6 +77,12 @@ func (le *LogEvent) UnmarshalCopy(buf []byte) (n int, err error) {
 	}
 	var n1 int
 	n1, le.src, err = UnmarshalStringCopy(buf[n:])
+	if err != nil {
+		return
+	}
+
+	n += n1
+	n1, le.tags, err = UnmarshalString(buf[n:])
 	return n + n1, err
 }
 
