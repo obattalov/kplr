@@ -10,6 +10,7 @@ import (
 	"github.com/jrivets/inject"
 	"github.com/jrivets/log4g"
 	"github.com/kplr-io/kplr"
+	"github.com/kplr-io/kplr/api"
 	"github.com/kplr-io/kplr/journal"
 	"github.com/kplr-io/kplr/model/k8s"
 	"github.com/kplr-io/kplr/mpool"
@@ -45,11 +46,15 @@ func main() {
 	})
 	jctrlr := journal.NewJournalCtrlr(&journal.JournalConfig{Dir: cfg.JournalsDir})
 
+	rapi := api.NewRestApi()
+
 	injector.RegisterOne(jctrlr, "")
 	injector.RegisterOne(transp, "")
 	injector.RegisterOne(mDesc, "mdlDesc")
 	injector.RegisterOne(mpl, "mPool")
 	injector.RegisterOne(mainCtx, "mainCtx")
+	injector.RegisterOne(cfg, "restApiConfig")
+	injector.RegisterOne(rapi, "")
 	injector.Construct()
 
 	signalChan := make(chan os.Signal, 1)

@@ -151,8 +151,38 @@ func TestLike(t *testing.T) {
 	}
 }
 
+func TestNot(t *testing.T) {
+	var le model.LogEvent
+	le.Reset(10, "Hello test", model.TagsToStr(map[string]string{"pod": "a123f", "key": "afdf"}))
+
+	f := getFunc("select where not (pod like \"a*f?f\") limit 10", t)
+	if f(&le) {
+		t.Fatal("Should be false, but ", f(&le))
+	}
+
+	f = getFunc("select where pod=a123f and key=afdf limit 10", t)
+	if f(&le) {
+		t.Fatal("Should be false, but ", f(&le))
+	}
+
+	f = getFunc("select where not pod=a3f and key=afdf limit 10", t)
+	if f(&le) {
+		t.Fatal("Should be false, but ", f(&le))
+	}
+
+	f = getFunc("select where not (pod=a3f and key=afdf) limit 10", t)
+	if f(&le) {
+		t.Fatal("Should be false, but ", f(&le))
+	}
+
+	f = getFunc("select where not (pod=a123f and key=afdf) limit 10", t)
+	if !f(&le) {
+		t.Fatal("Should be true, but ", f(&le))
+	}
+}
+
 func getFunc(q string, t *testing.T) journal.FilterF {
-	r, err := NewRequest(q)
+	r, err := NewQuery(q)
 	if err != nil {
 		t.Fatal("kql=\"", q, "\" while parsing, got an unexpected err=", err)
 		return nil

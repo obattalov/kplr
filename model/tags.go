@@ -6,8 +6,15 @@ import (
 )
 
 const (
-	TAG_TS  = "ts"
-	TAG_SRC = "src"
+	TAG_TS     = "ts"
+	TAG_SRC    = "src"
+	TAG_SRC_ID = "__source_id__"
+)
+
+type (
+	TagProvider interface {
+		Tag(tag string) interface{}
+	}
 )
 
 func IsTsTag(tg string) bool {

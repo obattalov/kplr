@@ -30,6 +30,17 @@ func (le *LogEvent) Tags() string {
 	return le.tags
 }
 
+func (le *LogEvent) Tag(tag string) interface{} {
+	switch tag {
+	case TAG_SRC:
+		return le.src
+	case TAG_TS:
+		return le.ts
+	default:
+		return GetTag(le.tags, tag)
+	}
+}
+
 // BufSize returns size of marshalled data
 func (le *LogEvent) BufSize() int {
 	return 16 + len(le.src) + len(le.tags)

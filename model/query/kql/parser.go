@@ -11,10 +11,10 @@ import (
 
 var (
 	kqlLexer = lexer.Unquote(lexer.Upper(lexer.Must(lexer.Regexp(`(\s+)`+
-		`|(?P<Keyword>(?i)SELECT|FROM|TAIL|WHERE|LIMIT|OFFSET|AND|OR|LIKE|CONTAINS|PREFIX|SUFFIX)`+
-		`|(?P<Ident>[a-zA-Z0-9-_@#$%^&*{}]+)`+
+		`|(?P<Keyword>(?i)SELECT|FROM|TAIL|WHERE|LIMIT|OFFSET|AND|OR|LIKE|CONTAINS|PREFIX|SUFFIX|NOT)`+
+		`|(?P<Ident>[a-zA-Z0-9-_@#$%?&*{}]+)`+
 		`|(?P<String>'[^']*'|"[^"]*")`+
-		`|(?P<Operator><>|!=|<=|>=|[-+*/%,.()=<>])`,
+		`|(?P<Operator><>|!=|<=|>=|[-+*/%,.=<>()])`,
 	)), "Keyword"), "String")
 	parser = participle.MustBuild(&Select{}, kqlLexer)
 )
@@ -51,7 +51,13 @@ type (
 	}
 
 	OrCondition struct {
-		And []*Condition `@@ { "AND" @@ }`
+		And []*XCondition `@@ { "AND" @@ }`
+	}
+
+	XCondition struct {
+		Not  bool        ` [@"NOT"] `
+		Cond *Condition  `( @@`
+		Expr *Expression `| "(" @@ ")")`
 	}
 
 	Condition struct {

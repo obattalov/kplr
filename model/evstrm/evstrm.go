@@ -28,7 +28,7 @@ func (ti *test_it) End() bool {
 
 func (ti *test_it) Get(le *model.LogEvent) error {
 	if len(*ti) > 0 {
-		le.Reset(0, (*ti)[0])
+		le.Reset(0, (*ti)[0], (*ti)[0])
 		return nil
 	}
 	return io.EOF
