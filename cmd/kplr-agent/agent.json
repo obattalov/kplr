@@ -1,0 +1,15 @@
+{
+  "backend": {
+    "address": "127.0.0.1:9966",
+    "partitionId": "default",
+    "packetMaxRecords": 1000
+  },
+  "collector": {
+    "scanPaths": ["/var/log/*.log"],
+    "scanPathsIntervalSec": 60,
+    "stateFile": "/tmp/collector.state",
+    "stateFlushIntervalSec": 10,
+    "eventMaxRecords": 1000,
+    "eventSendIntervalMs": 200
+  }
+}
