@@ -1,8 +1,10 @@
 {
-  "backend": {
-    "address": "127.0.0.1:9966",
-    "partitionId": "default",
-    "packetMaxRecords": 1000
+  "ingestor": {
+    "server": "127.0.0.1:9966",
+    "sourceId": "default",
+    "packetMaxRecords": 1000,
+    "accessKey": "",
+    "secretKey": ""
   },
   "collector": {
     "scanPaths": ["/var/log/*.log"],

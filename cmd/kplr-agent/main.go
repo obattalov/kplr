@@ -1,16 +1,21 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"flag"
 	"fmt"
 	"io/ioutil"
 	"os"
+	"time"
+
 	"os/signal"
 	"syscall"
 
 	"github.com/jrivets/log4g"
 	"github.com/kplr-io/geyser"
+	"github.com/kplr-io/kplr/model"
+	"github.com/kplr-io/kplr/model/k8s"
 )
 
 type (
@@ -21,15 +26,9 @@ type (
 		help   bool
 	}
 
-	backend struct {
-		Address          string `json:"address"`
-		PartitionId      string `json:"partitionId"`
-		PacketMaxRecords int    `json:"packetMaxRecords"`
-	}
-
 	config struct {
-		Backend   *backend       `json:"backend"`
-		Collector *geyser.Config `json:"collector"`
+		Ingestor  *IngestorConfig `json:"ingestor"`
+		Collector *geyser.Config  `json:"collector"`
 	}
 )
 
@@ -63,10 +62,65 @@ func loadConfig(path string) (*config, error) {
 	if err != nil {
 		return nil, err
 	}
-
 	cfg := &config{}
 	err = json.Unmarshal(data, cfg)
 	return cfg, err
+}
+
+func newCollector(cfg *geyser.Config) (*geyser.Collector, error) {
+	gsr, err := geyser.NewCollector(cfg)
+	if err == nil {
+		err = gsr.Start()
+	}
+	return gsr, nil
+}
+
+func mapMeta(ev *geyser.Event, cfg *IngestorConfig) model.Event {
+	var egm k8s.EgMeta
+	egm.SrcId = cfg.SourceId
+	return egm.Event()
+}
+
+func mapRecords(ev *geyser.Event) []string {
+	var lines []string
+	for _, r := range ev.Records.Data {
+		lines = append(lines, string(r))
+	}
+	return lines
+}
+
+func run(cfg *config, ctx context.Context, ing *Ingestor, gsr *geyser.Collector, done chan<- bool) error {
+	go func() {
+		defer func() {
+			logger.Info("Exiting...")
+			gsr.Stop()
+			ing.Close()
+			close(done)
+		}()
+
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case ev := <-gsr.Events():
+				for {
+					err := ing.Ingest(mapMeta(ev, cfg.Ingestor), mapRecords(ev))
+					if err == nil {
+						break
+					}
+					select {
+					case <-ctx.Done():
+						return
+					case <-time.After(time.Second):
+						logger.Info("Ingest error, recovering; cause: ", err)
+						ing.Close()
+						ing, err = newIngestor(cfg.Ingestor, k8s.MetaDesc)
+					}
+				}
+			}
+		}
+	}()
+	return nil
 }
 
 func main() {
@@ -75,7 +129,6 @@ func main() {
 	if args.debug {
 		log4g.SetLogLevel("", log4g.DEBUG)
 	}
-
 	if args.help {
 		flag.Usage()
 		os.Exit(0)
@@ -90,20 +143,20 @@ func main() {
 		logger.Fatal("Unable to load config file=", args.config, "; cause: ", err)
 		return
 	}
-
-	gsr, err := geyser.NewCollector(cfg.Collector,
-		logger.WithId(".collector").(log4g.Logger))
+	ing, err := newIngestor(cfg.Ingestor, k8s.MetaDesc)
+	if err != nil {
+		logger.Fatal("Unable to create ingestor; cause: ", err)
+		return
+	}
+	gsr, err := newCollector(cfg.Collector)
 	if err != nil {
 		logger.Fatal("Unable to create collector; cause: ", err)
 		return
 	}
-	defer func() {
-		logger.Info("Exiting...")
-		gsr.Stop()
-	}()
 
-	if err := gsr.Start(); err != nil {
-		logger.Fatal("Failed to start agent; cause: ", err)
+	done := make(chan bool)
+	ctx, cancel := context.WithCancel(context.Background())
+	if err := run(cfg, ctx, ing, gsr, done); err != nil {
 		return
 	}
 
@@ -112,5 +165,7 @@ func main() {
 	select {
 	case s := <-sigChan:
 		logger.Warn("Handling signal=", s)
+		cancel()
+		<-done
 	}
 }
