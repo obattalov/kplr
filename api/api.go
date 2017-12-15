@@ -6,13 +6,14 @@ import (
 	"io"
 	"net/http"
 	"net/http/httputil"
-	"os"
 	"path"
 	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/jrivets/log4g"
+	"github.com/kplr-io/kplr/cursor"
+	"github.com/kplr-io/kplr/model/query"
 )
 
 type (
@@ -23,10 +24,11 @@ type (
 	}
 
 	RestApi struct {
-		logger log4g.Logger
-		ge     *gin.Engine
-		srv    *http.Server
-		Config RestApiConfig `inject:"restApiConfig"`
+		logger         log4g.Logger
+		ge             *gin.Engine
+		srv            *http.Server
+		Config         RestApiConfig         `inject:"restApiConfig"`
+		CursorProvider cursor.CursorProvider `inject:""`
 	}
 
 	api_error struct {
@@ -42,6 +44,7 @@ type (
 
 const (
 	ERR_INVALID_CNT_TYPE = 1
+	ERR_INVALID_PARAM    = 2
 )
 
 func NewError(tp int, msg string) error {
@@ -55,6 +58,8 @@ func (ae *api_error) Error() string {
 func (ae *api_error) get_error_resp() error_resp {
 	switch ae.err_tp {
 	case ERR_INVALID_CNT_TYPE:
+		return error_resp{http.StatusBadRequest, ae.msg}
+	case ERR_INVALID_PARAM:
 		return error_resp{http.StatusBadRequest, ae.msg}
 	}
 	return error_resp{http.StatusInternalServerError, ae.msg}
@@ -79,6 +84,7 @@ func (ra *RestApi) DiInit() error {
 	ra.ge = gin.New()
 	if ra.Config.IsHttpDebugMode() {
 		ra.logger.Info("Gin logger and gin.debug is enabled. You can set up DEBUG mode for the ", ra.logger.GetName(), " group to obtain requests dumps and more logs for the API group.")
+		log4g.SetLogLevel(ra.logger.GetName(), log4g.DEBUG)
 		ra.ge.Use(gin.Logger())
 	}
 
@@ -144,11 +150,26 @@ func (ra *RestApi) h_GET_ping(c *gin.Context) {
 func (ra *RestApi) h_POST_select(c *gin.Context) {
 	ra.logger.Debug("POST /select")
 
+	var sq SelectQuery
+	if ra.errorResponse(c, bindAppJson(c, &sq)) {
+		return
+	}
+	kqry := sq.applyParams()
+	ra.logger.Debug("Got query \"", kqry, "\" for ", &sq)
+
+	q, err := query.NewQuery(kqry)
+	if ra.errorResponse(c, wrapErrorInvalidParam(err)) {
+		return
+	}
+
+	cur, err := ra.CursorProvider.NewCursor(q)
+	if ra.errorResponse(c, wrapErrorInvalidParam(err)) {
+		return
+	}
+
 	w := c.Writer
 	w.Header().Set("Content-Disposition", "attachment; filename=logs.tar.gz")
-	f, _ := os.Open("/opt/kplr/test/wifi.log")
-
-	io.Copy(w, f)
+	io.Copy(w, cur.GetRecords(q.Limit()))
 }
 
 func bindAppJson(c *gin.Context, inf interface{}) error {
@@ -161,6 +182,13 @@ func bindAppJson(c *gin.Context, inf interface{}) error {
 
 func reqOp(c *gin.Context) string {
 	return fmt.Sprint(c.Request.Method, " ", c.Request.URL)
+}
+
+func wrapErrorInvalidParam(err error) error {
+	if err == nil {
+		return nil
+	}
+	return NewError(ERR_INVALID_PARAM, err.Error())
 }
 
 func (ra *RestApi) errorResponse(c *gin.Context, err error) bool {

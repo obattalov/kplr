@@ -14,7 +14,7 @@ import (
 
 type (
 	Cursor interface {
-		GetRecords(limit int) io.Reader
+		GetRecords(limit int64) io.Reader
 	}
 
 	CursorProvider interface {
@@ -25,7 +25,7 @@ type (
 	cur_provider struct {
 		Table       storage.Table      `inject:"storageTable"`
 		JController journal.Controller `inject:""`
-		MPool       mpool.Pool         `inject:""`
+		MPool       mpool.Pool         `inject:"mPool"`
 	}
 
 	cur struct {
@@ -105,13 +105,13 @@ func (cp *cur_provider) NewCursor(qry *query.Query) (Cursor, error) {
 }
 
 // ================================ cur ======================================
-func (c *cur) GetRecords(limit int) io.Reader {
+func (c *cur) GetRecords(limit int64) io.Reader {
 	r := new(reader)
 	r.f = c.getSimpleFormatter(limit)
 	return r
 }
 
-func (c *cur) getSimpleFormatter(limit int) formatter {
+func (c *cur) getSimpleFormatter(limit int64) formatter {
 	return func() (string, error) {
 		if limit <= 0 {
 			return "", io.EOF
