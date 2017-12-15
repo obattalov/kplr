@@ -217,6 +217,14 @@ func MarshalString(v string, buf []byte) (int, error) {
 	return ln + 4, nil
 }
 
+func StringToByteArray(v string) []byte {
+	return *(*[]byte)(unsafe.Pointer(&v))
+}
+
+func ByteArrayToString(buf []byte) string {
+	return *(*string)(unsafe.Pointer(&buf))
+}
+
 // UnmarshalStringCopy uses cast of []byte -> string, it is slow version
 // becuase it requires an allocation of the new memory segment and copying it
 func UnmarshalStringCopy(buf []byte) (int, string, error) {

@@ -8,6 +8,7 @@ import (
 
 	"github.com/jrivets/log4g"
 	"github.com/kplr-io/container/btsbuf"
+	kjrnl "github.com/kplr-io/journal"
 	"github.com/kplr-io/kplr/journal"
 	"github.com/kplr-io/kplr/model"
 	"github.com/kplr-io/kplr/mpool"
@@ -21,9 +22,9 @@ type (
 	}
 
 	Transport struct {
-		MemPool   mpool.Pool          `inject:"mPool"`
-		ModelDesc model.Descriptor    `inject:"mdlDesc"`
-		JrnlCtrlr *journal.Controller `inject:""`
+		MemPool   mpool.Pool         `inject:"mPool"`
+		ModelDesc model.Descriptor   `inject:"mdlDesc"`
+		JrnlCtrlr journal.Controller `inject:""`
 
 		logger  log4g.Logger
 		zserver io.Closer
@@ -100,15 +101,15 @@ func (t *Transport) OnRead(r zebra.Reader, n int) error {
 	}
 
 	jid := t.ModelDesc.GetJournalId(meta)
-	var jrnl *journal.Journal
-	jrnl, err = t.JrnlCtrlr.GetJournal(jid)
+	var jrnl kjrnl.Writer
+	jrnl, err = t.JrnlCtrlr.GetWriter(jid)
 	if err != nil {
 		t.logger.Error("Could not get journal by jid=", jid, ", err=", err)
 		return err
 	}
 
 	bbi.Next()
-	err = jrnl.Write(&bbi)
+	_, err = jrnl.Write(&bbi)
 	if err != nil {
 		t.logger.Error("Could not store data to journal ", jid, ", err=", err)
 		return err

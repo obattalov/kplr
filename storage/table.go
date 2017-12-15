@@ -7,18 +7,18 @@ import (
 
 	"github.com/emirpasic/gods/maps/treemap"
 	"github.com/kplr-io/kplr/model"
-	kqry "github.com/kplr-io/kplr/model/query"
+	"github.com/kplr-io/kplr/model/query"
 )
 
 type (
 	Table interface {
 		Upsert(tags string) error
-		GetSrcId(query *kqry.Query) []string
+		GetSrcId(qry *query.Query) []string
 	}
 
 	table struct {
 		lock     sync.Mutex
-		id       int
+		cur_id   int
 		v2iStore atomic.Value
 
 		vals2id *treemap.Map
@@ -26,6 +26,11 @@ type (
 		id2vals *treemap.Map
 	}
 )
+
+func NewTable() Table {
+	t := new(table)
+	return t
+}
 
 func (t *table) Upsert(tags string) error {
 	m := t.v2iStore.Load().(map[string]int)
@@ -40,9 +45,9 @@ func (t *table) Upsert(tags string) error {
 	t.lock.Lock()
 	defer t.lock.Unlock()
 
-	t.id++
-	t.vals2id.Put(tags, t.id)
-	t.id2vals.Put(t.id, tags)
+	t.cur_id++
+	t.vals2id.Put(tags, t.cur_id)
+	t.id2vals.Put(t.cur_id, tags)
 
 	m = make(map[string]int, t.vals2id.Size())
 	t.vals2id.Each(func(key interface{}, value interface{}) {
@@ -52,6 +57,7 @@ func (t *table) Upsert(tags string) error {
 	return nil
 }
 
-func (t *table) GetSrcId(query *kqry.Query) []string {
-	return nil
+func (t *table) GetSrcId(qry *query.Query) []string {
+	// TODO right now returns whateever we have in the query
+	return qry.GetSources()
 }

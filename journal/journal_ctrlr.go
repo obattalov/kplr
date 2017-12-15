@@ -6,7 +6,6 @@ import (
 	"sync"
 
 	"github.com/jrivets/log4g"
-	"github.com/kplr-io/container/btsbuf"
 	"github.com/kplr-io/journal"
 )
 
@@ -15,16 +14,21 @@ type (
 		Dir string
 	}
 
-	Controller struct {
+	Controller interface {
+		GetReader(jid string) (journal.Reader, error)
+		GetWriter(jid string) (journal.Writer, error)
+	}
+
+	controller struct {
 		dir      string
 		lock     sync.Mutex
-		journals map[string]*Journal
+		journals map[string]*jrnl_wrap
 		logger   log4g.Logger
 		shtdwn   bool
 	}
 
-	Journal struct {
-		jctrlr *Controller
+	jrnl_wrap struct {
+		jctrlr *controller
 		lock   sync.Mutex
 		ready  chan bool
 		jid    string
@@ -34,20 +38,20 @@ type (
 	}
 )
 
-func NewJournalCtrlr(jcfg *JournalConfig) *Controller {
-	jc := new(Controller)
-	jc.journals = make(map[string]*Journal)
+func NewJournalCtrlr(jcfg *JournalConfig) Controller {
+	jc := new(controller)
+	jc.journals = make(map[string]*jrnl_wrap)
 	jc.dir = jcfg.Dir
 	jc.logger = log4g.GetLogger("journal.Controller")
 	jc.logger.Info("Just created dir=", jc.dir)
 	return jc
 }
 
-func (jc *Controller) DiPhase() int {
+func (jc *controller) DiPhase() int {
 	return 0
 }
 
-func (jc *Controller) DiInit() error {
+func (jc *controller) DiInit() error {
 	jc.logger.Info("Initializing. Will scan ", jc.dir)
 	jids, err := scanForJournals(jc.dir)
 	if err != nil {
@@ -68,7 +72,7 @@ func (jc *Controller) DiInit() error {
 	return nil
 }
 
-func (jc *Controller) DiShutdown() {
+func (jc *controller) DiShutdown() {
 	jc.lock.Lock()
 	defer jc.lock.Unlock()
 
@@ -81,14 +85,33 @@ func (jc *Controller) DiShutdown() {
 	for _, j := range jc.journals {
 		j.shutdown()
 	}
-	jc.journals = make(map[string]*Journal)
+	jc.journals = make(map[string]*jrnl_wrap)
 }
 
-func (jc *Controller) String() string {
+func (jc *controller) String() string {
 	return fmt.Sprint("journal.Controller{dir=", jc.dir, "}")
 }
 
-func (jc *Controller) GetJournal(jid string) (*Journal, error) {
+func (jc *controller) GetReader(jid string) (journal.Reader, error) {
+	jrnl, err := jc.getJournal(jid)
+	if err != nil {
+		return nil, err
+	}
+
+	var jr journal.JReader
+	jrnl.InitReader(&jr)
+	return &jr, nil
+}
+
+func (jc *controller) GetWriter(jid string) (journal.Writer, error) {
+	jrnl, err := jc.getJournal(jid)
+	if err != nil {
+		return nil, err
+	}
+	return jrnl, nil
+}
+
+func (jc *controller) getJournal(jid string) (*journal.Journal, error) {
 	jc.lock.Lock()
 	if jc.shtdwn {
 		jc.lock.Unlock()
@@ -96,17 +119,17 @@ func (jc *Controller) GetJournal(jid string) (*Journal, error) {
 	}
 
 	var err error
-	jrnl, ok := jc.journals[jid]
+	jw, ok := jc.journals[jid]
 	if !ok {
 		if err == nil {
-			jrnl, err = jc.newJournal(jid)
+			jw, err = jc.newJournal(jid)
 		}
 	}
 	jc.lock.Unlock()
-	return jrnl, err
+	return jw.get_journal()
 }
 
-func (jc *Controller) newJournal(jid string) (*Journal, error) {
+func (jc *controller) newJournal(jid string) (*jrnl_wrap, error) {
 	jdir, err := journalPath(jc.dir, jid)
 	if err != nil {
 		jc.logger.Error("Could not create dir err=", err)
@@ -117,15 +140,15 @@ func (jc *Controller) newJournal(jid string) (*Journal, error) {
 	return jrnl, nil
 }
 
-func (jc *Controller) onInitError(jrnl *Journal) {
+func (jc *controller) onInitError(jrnl *jrnl_wrap) {
 	jc.lock.Lock()
 	defer jc.lock.Unlock()
 
 	delete(jc.journals, jrnl.jid)
 }
 
-func newJournal(jc *Controller, dir, jid string) *Journal {
-	j := new(Journal)
+func newJournal(jc *controller, dir, jid string) *jrnl_wrap {
+	j := new(jrnl_wrap)
 	j.ready = make(chan bool)
 	j.dir = dir
 	j.jid = jid
@@ -149,7 +172,7 @@ func newJournal(jc *Controller, dir, jid string) *Journal {
 	return j
 }
 
-func (j *Journal) shutdown() {
+func (j *jrnl_wrap) shutdown() {
 	j.lock.Lock()
 	defer j.lock.Unlock()
 
@@ -160,7 +183,7 @@ func (j *Journal) shutdown() {
 	j.jrnl.Close()
 }
 
-func (j *Journal) Write(bbi btsbuf.Iterator) error {
+func (j *jrnl_wrap) get_journal() (*journal.Journal, error) {
 	<-j.ready
 	j.lock.Lock()
 	jrnl := j.jrnl
@@ -168,10 +191,8 @@ func (j *Journal) Write(bbi btsbuf.Iterator) error {
 
 	if jrnl == nil {
 		j.logger.Warn("Write(): found the journal could not be properly initialized.")
-		return errors.New("Could not open the journal")
+		return nil, errors.New("Could not open the journal")
 	}
 
-	_, err := jrnl.Write(bbi, nil)
-
-	return err
+	return jrnl, nil
 }

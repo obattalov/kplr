@@ -45,3 +45,18 @@ func TestBufSize(t *testing.T) {
 		t.Fatal("Expecting n=", n, " == ", len(bf), ", err=", err)
 	}
 }
+
+func TestCasts(t *testing.T) {
+	s := "Hello WOrld"
+	bf := StringToByteArray(s)
+	s1 := ByteArrayToString(bf)
+	if s != s1 {
+		t.Fatal("Oops, expecting s1=", s, ", but really s1=", s1)
+	}
+
+	bf = StringToByteArray("")
+	s1 = ByteArrayToString(bf)
+	if s1 != "" {
+		t.Fatal("Oops, expecting empty string, but got s1=", s1)
+	}
+}

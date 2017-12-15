@@ -21,7 +21,8 @@ type (
 	}
 )
 
-func getFirst(ev1, ev2 *model.LogEvent) bool {
+// GetFirst returns whether the ev1 should be selected first
+func GetFirst(ev1, ev2 *model.LogEvent) bool {
 	return true
 }
 

@@ -65,6 +65,16 @@ func (r *Query) GetSources() []string {
 	return r.srcIds
 }
 
+// Limit returns number of records that should be read, if 0 is returned
+// there is no limit specified in the query
+func (r *Query) Limit() int64 {
+	return int64(r.qSel.Limit)
+}
+
+func (r *Query) Reverse() bool {
+	return r.qSel.Tail
+}
+
 // ============================== trvrsl_ctx ===================================
 func negative(le *model.LogEvent) bool {
 	return false
@@ -84,7 +94,7 @@ func neglect(f ChkF) ChkF {
 // if LogEvent does NOT match the condition)
 func (tc *trvrsl_ctx) buildFilterF(query *kql.Select) (journal.FilterF, error) {
 	if query.Where == nil || len(query.Where.Or) == 0 {
-		return negative, nil
+		return nil, nil
 	}
 
 	f, err := tc.getOrConds(query.Where.Or)
