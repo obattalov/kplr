@@ -5,6 +5,7 @@ import (
 	"io"
 
 	"github.com/kplr-io/kplr/journal"
+	"github.com/kplr-io/kplr/model"
 	"github.com/kplr-io/kplr/model/evstrm"
 	"github.com/kplr-io/kplr/model/query"
 	"github.com/kplr-io/kplr/mpool"
@@ -105,6 +106,23 @@ func (cp *cur_provider) NewCursor(qry *query.Query) (Cursor, error) {
 
 // ================================ cur ======================================
 func (c *cur) GetRecords(limit int) io.Reader {
+	r := new(reader)
+	r.f = c.getSimpleFormatter(limit)
+	return r
+}
 
-	return nil
+func (c *cur) getSimpleFormatter(limit int) formatter {
+	return func() (string, error) {
+		if limit <= 0 {
+			return "", io.EOF
+		}
+		limit--
+		var le model.LogEvent
+		err := c.it.Get(&le)
+		if err != nil {
+			return "", err
+		}
+		c.it.Next()
+		return le.Source(), nil
+	}
 }

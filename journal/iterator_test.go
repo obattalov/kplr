@@ -64,6 +64,11 @@ func (jr *jreader) ReadBack(bbw *btsbuf.Writer) (int, error) {
 	return n, nil
 }
 
+func (jr *jreader) Close() error {
+	jr.idx = len(jr.ss)
+	return nil
+}
+
 func TestForward(t *testing.T) {
 	var jr jreader
 	jr.reset(0, []string{"aa", "bb", "cc"})

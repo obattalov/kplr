@@ -34,15 +34,17 @@ func (r *reader) Read(p []byte) (n int, err error) {
 		r.buf = r.buf[c:]
 		n += c
 	}
+	return n, nil
 }
 
 func (r *reader) fillBuf() error {
 	if len(r.buf) > 0 {
 		return nil
 	}
-	s, err := f()
+	s, err := r.f()
 	if err != nil {
 		return err
 	}
 	r.buf = model.StringToByteArray(s)
+	return nil
 }
