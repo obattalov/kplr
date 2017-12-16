@@ -7,15 +7,12 @@ import (
 	"fmt"
 	"io/ioutil"
 	"os"
-	"time"
-
 	"os/signal"
 	"syscall"
+	"time"
 
 	"github.com/jrivets/log4g"
 	"github.com/kplr-io/geyser"
-	"github.com/kplr-io/kplr/model"
-	"github.com/kplr-io/kplr/model/k8s"
 )
 
 type (
@@ -27,7 +24,7 @@ type (
 	}
 
 	config struct {
-		Ingestor  *IngestorConfig `json:"ingestor"`
+		Ingestor  *ingestorConfig `json:"ingestor"`
 		Collector *geyser.Config  `json:"collector"`
 	}
 )
@@ -75,52 +72,43 @@ func newCollector(cfg *geyser.Config) (*geyser.Collector, error) {
 	return gsr, nil
 }
 
-func mapMeta(ev *geyser.Event, cfg *IngestorConfig) model.Event {
-	var egm k8s.EgMeta
-	egm.SrcId = cfg.SourceId
-	return egm.Event()
-}
-
-func mapRecords(ev *geyser.Event) []string {
-	var lines []string
-	for _, r := range ev.Records.Data {
-		lines = append(lines, string(r))
-	}
-	return lines
-}
-
-func run(cfg *config, ctx context.Context, ing *Ingestor, gsr *geyser.Collector, done chan<- bool) error {
+func runIngest(ctx context.Context, ing *ingestor, events <-chan *geyser.Event, done chan<- bool) {
 	go func() {
 		defer func() {
-			logger.Info("Exiting...")
-			gsr.Stop()
-			ing.Close()
 			close(done)
 		}()
-
 		for {
 			select {
 			case <-ctx.Done():
 				return
-			case ev := <-gsr.Events():
+			case ev := <-events:
+				var err error
 				for {
-					err := ing.Ingest(mapMeta(ev, cfg.Ingestor), mapRecords(ev))
 					if err == nil {
-						break
+						//TODO: confirm msg delivery
+						err = ing.ingest(ev)
+						if err == nil {
+							break
+						}
 					}
-					select {
-					case <-ctx.Done():
-						return
-					case <-time.After(time.Second):
-						logger.Info("Ingest error, recovering; cause: ", err)
-						ing.Close()
-						ing, err = newIngestor(cfg.Ingestor, k8s.MetaDesc)
+					logger.Info("Ingestor error, recovering; cause: ", err)
+					err = ing.reInit()
+					if !wait(ctx, 1) {
+						break
 					}
 				}
 			}
 		}
 	}()
-	return nil
+}
+
+func wait(ctx context.Context, timeoutSec int) bool {
+	select {
+	case <-ctx.Done():
+		return false
+	case <-time.After(time.Duration(timeoutSec) * time.Second):
+		return true
+	}
 }
 
 func main() {
@@ -143,22 +131,24 @@ func main() {
 		logger.Fatal("Unable to load config file=", args.config, "; cause: ", err)
 		return
 	}
-	ing, err := newIngestor(cfg.Ingestor, k8s.MetaDesc)
+
+	ing, err := newIngestor(cfg.Ingestor)
 	if err != nil {
 		logger.Fatal("Unable to create ingestor; cause: ", err)
 		return
 	}
+
+	defer ing.close()
 	gsr, err := newCollector(cfg.Collector)
 	if err != nil {
 		logger.Fatal("Unable to create collector; cause: ", err)
 		return
 	}
 
+	defer gsr.Stop()
 	done := make(chan bool)
 	ctx, cancel := context.WithCancel(context.Background())
-	if err := run(cfg, ctx, ing, gsr, done); err != nil {
-		return
-	}
+	runIngest(ctx, ing, gsr.Events(), done)
 
 	sigChan := make(chan os.Signal, 1)
 	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)

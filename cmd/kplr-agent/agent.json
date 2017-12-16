@@ -3,6 +3,7 @@
     "server": "127.0.0.1:9966",
     "sourceId": "default",
     "packetMaxRecords": 1000,
+    "metaDataModel": "k8s",
     "accessKey": "",
     "secretKey": ""
   },

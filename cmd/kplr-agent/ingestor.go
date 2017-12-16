@@ -6,30 +6,38 @@ import (
 	"github.com/jrivets/log4g"
 	"github.com/kplr-io/geyser"
 	"github.com/kplr-io/kplr/model"
+	"github.com/kplr-io/kplr/model/k8s"
 	"github.com/kplr-io/kplr/wire"
 	"github.com/kplr-io/zebra"
 )
 
 type (
-	IngestorConfig struct {
-		Server           string `json:"server"`
-		SourceId         string `json:"sourceId"`
-		PacketMaxRecords int    `json:"packetMaxRecords"`
-		AccessKey        string `json:"accessKey"`
-		SecretKey        string `json:"secretKey"`
+	ingestorConfig struct {
+		Server           string        `json:"server"`
+		SourceId         string        `json:"sourceId"`
+		PacketMaxRecords int           `json:"packetMaxRecords"`
+		MetaDataModel    metaDataModel `json:"metaDataModel"`
+		AccessKey        string        `json:"accessKey"`
+		SecretKey        string        `json:"secretKey"`
 	}
 
-	Ingestor struct {
-		cfg       *IngestorConfig
+	ingestor struct {
+		cfg       *ingestorConfig
 		zClient   zebra.Writer
 		pktWriter *wire.Writer
 		logger    log4g.Logger
 	}
+
+	metaDataModel string
+)
+
+const (
+	k8sMetaModel metaDataModel = "k8s"
 )
 
 //=== ingestor
 
-func newIngestor(cfg *IngestorConfig, headerModel model.Meta) (*Ingestor, error) {
+func newIngestor(cfg *ingestorConfig) (*ingestor, error) {
 	if err := checkConfig(cfg); err != nil {
 		return nil, err
 	}
@@ -37,24 +45,24 @@ func newIngestor(cfg *IngestorConfig, headerModel model.Meta) (*Ingestor, error)
 	logger := log4g.GetLogger("kplr.ingestor")
 	logger.Info("Creating, config=", geyser.ToJsonStr(cfg))
 
+	mm := getMetaDesc(cfg.MetaDataModel)
 	zcl, err := zebra.NewTcpClient(cfg.Server,
 		&zebra.ClientConfig{AccessKey: cfg.AccessKey, SecretKey: cfg.SecretKey})
 	if err != nil {
 		return nil, err
 	}
-	ing := &Ingestor{
-		cfg:       cfg,
-		zClient:   zcl,
-		pktWriter: wire.NewWriter(&model.SimpleLogEventEncoder{}, headerModel),
-		logger:    logger,
-	}
 
 	logger.Info("Created!")
-	return ing, nil
+	return &ingestor{
+		cfg:       cfg,
+		zClient:   zcl,
+		pktWriter: wire.NewWriter(&model.SimpleLogEventEncoder{}, mm),
+		logger:    logger,
+	}, nil
 }
 
-func (i *Ingestor) Ingest(header model.Event, lines []string) error {
-	buf, err := i.pktWriter.MakeBtsBuf(header, lines)
+func (i *ingestor) ingest(ev *geyser.Event) error {
+	buf, err := i.pktWriter.MakeBtsBuf(getMetaData(i.cfg, ev), getLines(ev))
 	if err != nil {
 		return err
 	}
@@ -65,7 +73,17 @@ func (i *Ingestor) Ingest(header model.Event, lines []string) error {
 	return nil
 }
 
-func (i *Ingestor) Close() {
+func (i *ingestor) reInit() error {
+	var err error
+	if i.zClient != nil {
+		i.zClient.Close()
+	}
+	i.zClient, err = zebra.NewTcpClient(i.cfg.Server,
+		&zebra.ClientConfig{AccessKey: i.cfg.AccessKey, SecretKey: i.cfg.SecretKey})
+	return err
+}
+
+func (i *ingestor) close() {
 	i.logger.Info("Closing...")
 	if i.zClient != nil {
 		i.zClient.Close()
@@ -75,7 +93,36 @@ func (i *Ingestor) Close() {
 
 //=== helpers
 
-func checkConfig(cfg *IngestorConfig) error {
+func getMetaDesc(mm metaDataModel) model.Meta {
+	switch mm {
+	case k8sMetaModel:
+		return k8s.MetaDesc
+	default:
+		return nil
+	}
+}
+
+func getMetaData(cfg *ingestorConfig, ev *geyser.Event) model.Event {
+	switch cfg.MetaDataModel {
+	case k8sMetaModel:
+		var egm k8s.EgMeta
+		egm.SrcId = cfg.SourceId
+		//TODO: parse file to get other fields (contId, podId...)
+		return egm.Event()
+	default:
+		return nil
+	}
+}
+
+func getLines(ev *geyser.Event) []string {
+	var lines []string
+	for _, r := range ev.Records.Data {
+		lines = append(lines, string(r))
+	}
+	return lines
+}
+
+func checkConfig(cfg *ingestorConfig) error {
 	if cfg == nil {
 		return fmt.Errorf("invalid config=%v", cfg)
 	}
@@ -87,6 +134,9 @@ func checkConfig(cfg *IngestorConfig) error {
 	}
 	if cfg.PacketMaxRecords <= 0 {
 		return fmt.Errorf("invalid config; packetMaxRecords=%v, must be > 0", cfg.PacketMaxRecords)
+	}
+	if getMetaDesc(cfg.MetaDataModel) == nil {
+		return fmt.Errorf("invalid config; no meta model found of type=%v", cfg.MetaDataModel)
 	}
 	return nil
 }
