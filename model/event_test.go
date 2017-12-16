@@ -18,6 +18,7 @@ func marshalStringByCast(v string, buf []byte) (int, error) {
 }
 
 var tstStr = "This is some string for test marshalling speed Yahhoooo 11111111111111111111111111111111111111111111111111"
+var tstTags = "pod=1234134kjhakfdjhlakjdsfhkjahdlf,key=abc"
 
 func BenchmarkMarshalStringByCast(b *testing.B) {
 	var buf [200]byte

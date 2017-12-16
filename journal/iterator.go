@@ -44,6 +44,12 @@ type (
 	}
 )
 
+// NewIterator creates new iterator over the journal reader. It expects the reader
+// buffer which will be used for reading next portion of records from the journal.
+//
+// In the implementation the buffer must be big enough to read at least one record
+// but not so big, to read unnecessary amount of records
+// TODO: implement the behavior with an elastic buffer size
 func NewIterator(jr journal.Reader, buf []byte) *Iterator {
 	it := new(Iterator)
 	it.JReader = jr

@@ -71,7 +71,7 @@ func main() {
 
 	scanner := bufio.NewScanner(f)
 	for scanner.Scan() {
-		cn.newLine(scanner.Text())
+		cn.newLine(scanner.Text() + "\n")
 	}
 
 	if err := scanner.Err(); err != nil {

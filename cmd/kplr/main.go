@@ -10,9 +10,12 @@ import (
 	"github.com/jrivets/inject"
 	"github.com/jrivets/log4g"
 	"github.com/kplr-io/kplr"
+	"github.com/kplr-io/kplr/api"
+	"github.com/kplr-io/kplr/cursor"
 	"github.com/kplr-io/kplr/journal"
 	"github.com/kplr-io/kplr/model/k8s"
 	"github.com/kplr-io/kplr/mpool"
+	"github.com/kplr-io/kplr/storage"
 	"github.com/kplr-io/kplr/wire"
 )
 
@@ -45,11 +48,19 @@ func main() {
 	})
 	jctrlr := journal.NewJournalCtrlr(&journal.JournalConfig{Dir: cfg.JournalsDir})
 
+	rapi := api.NewRestApi()
+	cprvdr := cursor.NewCursorProvider()
+	tbl := storage.NewTable()
+
 	injector.RegisterOne(jctrlr, "")
 	injector.RegisterOne(transp, "")
 	injector.RegisterOne(mDesc, "mdlDesc")
 	injector.RegisterOne(mpl, "mPool")
 	injector.RegisterOne(mainCtx, "mainCtx")
+	injector.RegisterOne(cfg, "restApiConfig")
+	injector.RegisterOne(rapi, "")
+	injector.RegisterOne(cprvdr, "")
+	injector.RegisterOne(tbl, "storageTable")
 	injector.Construct()
 
 	signalChan := make(chan os.Signal, 1)
@@ -71,6 +82,7 @@ func prepareConfig() (*Config, error) {
 	flag.StringVar(&cfgFile, "config-file", defaultConfigFile, "The kplr configuration file name")
 	flag.StringVar(&logCfgFile, "log-config", defaultLog4gCongigFile, "The log4g configuration file name")
 	flag.StringVar(&pCfg.JournalsDir, "journal-dir", defaultKplrJrnlsDir, "The directory where journal will be stored")
+	flag.BoolVar(&pCfg.HttpDebugMode, "api-debug", false, "Whether ReST API will be verbose or not")
 	flag.BoolVar(&help, "help", false, "Prints the usage")
 
 	flag.Parse()

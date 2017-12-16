@@ -24,7 +24,7 @@ func (jr *jreader) ReadForward(bbw *btsbuf.Writer) (int, error) {
 	n := 0
 	var le model.LogEvent
 	for jr.idx < len(jr.ss) {
-		le.Reset(uint64(jr.idx), jr.ss[jr.idx])
+		le.Reset(uint64(jr.idx), jr.ss[jr.idx], "")
 		bb, err := bbw.Allocate(le.BufSize())
 		if err != nil {
 			if n == 0 {
@@ -46,7 +46,7 @@ func (jr *jreader) ReadBack(bbw *btsbuf.Writer) (int, error) {
 	n := 0
 	var le model.LogEvent
 	for jr.idx >= 0 {
-		le.Reset(uint64(jr.idx), jr.ss[jr.idx])
+		le.Reset(uint64(jr.idx), jr.ss[jr.idx], "")
 		bb, err := bbw.Allocate(le.BufSize())
 		if err != nil {
 			if n == 0 {
@@ -64,11 +64,16 @@ func (jr *jreader) ReadBack(bbw *btsbuf.Writer) (int, error) {
 	return n, nil
 }
 
+func (jr *jreader) Close() error {
+	jr.idx = len(jr.ss)
+	return nil
+}
+
 func TestForward(t *testing.T) {
 	var jr jreader
 	jr.reset(0, []string{"aa", "bb", "cc"})
 
-	var buf [20]byte
+	var buf [30]byte
 	it := NewIterator(&jr, buf[:])
 
 	n := 0
@@ -85,7 +90,7 @@ func TestForward(t *testing.T) {
 		n++
 	}
 	if n != 3 {
-		t.Fatal("Must be 3 records be read")
+		t.Fatal("Must be 3 records be read, but n=", n)
 	}
 
 	jr.idx = 0
@@ -109,7 +114,7 @@ func TestBackward(t *testing.T) {
 	var jr jreader
 	jr.reset(2, []string{"aa", "bb", "cc"})
 
-	var buf [20]byte
+	var buf [30]byte
 	it := NewIterator(&jr, buf[:])
 	it.Fwd = false
 
@@ -127,7 +132,7 @@ func TestBackward(t *testing.T) {
 		n++
 	}
 	if n != 3 {
-		t.Fatal("Must be 3 records be read")
+		t.Fatal("Must be 3 records be read, but n=", n)
 	}
 }
 
@@ -180,7 +185,7 @@ func TestForwardFilter(t *testing.T) {
 	var jr jreader
 	jr.reset(0, []string{"aa", "bb", "cc"})
 
-	var buf [20]byte
+	var buf [30]byte
 	it := NewIterator(&jr, buf[:])
 	// skip all, but contains `b`
 	it.FltF = func(ev *model.LogEvent) bool {
@@ -202,7 +207,7 @@ func TestBackwardFilter(t *testing.T) {
 	var jr jreader
 	jr.reset(3, []string{"aa", "bb", "cc", "dd"})
 
-	var buf [20]byte
+	var buf [40]byte
 	it := NewIterator(&jr, buf[:])
 	it.Fwd = false
 

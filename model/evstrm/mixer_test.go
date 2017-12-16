@@ -8,11 +8,11 @@ import (
 )
 
 func TestMixer(t *testing.T) {
-	testMixerOrder([]string{"a", "b"}, []string{"c", "d"}, []string{"a", "b", "c", "d"}, getFirst, t)
-	testMixerOrder([]string{"a"}, []string{"c", "d"}, []string{"a", "c", "d"}, getFirst, t)
-	testMixerOrder([]string{}, []string{"c", "d"}, []string{"c", "d"}, getFirst, t)
-	testMixerOrder([]string{"a", "b"}, []string{}, []string{"a", "b"}, getFirst, t)
-	testMixerOrder([]string{}, []string{}, []string{}, getFirst, t)
+	testMixerOrder([]string{"a", "b"}, []string{"c", "d"}, []string{"a", "b", "c", "d"}, GetFirst, t)
+	testMixerOrder([]string{"a"}, []string{"c", "d"}, []string{"a", "c", "d"}, GetFirst, t)
+	testMixerOrder([]string{}, []string{"c", "d"}, []string{"c", "d"}, GetFirst, t)
+	testMixerOrder([]string{"a", "b"}, []string{}, []string{"a", "b"}, GetFirst, t)
+	testMixerOrder([]string{}, []string{}, []string{}, GetFirst, t)
 
 	i := 0
 	sel := func(ev1, ev2 *model.LogEvent) bool {
