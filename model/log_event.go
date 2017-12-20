@@ -7,18 +7,18 @@ import (
 type (
 	LogEvent struct {
 		ts   int64
-		src  string
+		src  WeakString
 		tags Tags
 	}
 )
 
-func (le *LogEvent) Reset(ts uint64, src string, tags Tags) {
+func (le *LogEvent) Reset(ts uint64, src WeakString, tags Tags) {
 	le.ts = int64(ts)
 	le.src = src
 	le.tags = tags
 }
 
-func (le *LogEvent) Source() string {
+func (le *LogEvent) Source() WeakString {
 	return le.src
 }
 
@@ -52,7 +52,7 @@ func (le *LogEvent) Marshal(buf []byte) (int, error) {
 		return 0, err
 	}
 
-	n1, err := MarshalString(le.src, buf[n:])
+	n1, err := MarshalString(string(le.src), buf[n:])
 	if err != nil {
 		return 0, err
 	}
@@ -76,28 +76,10 @@ func (le *LogEvent) Unmarshal(buf []byte) (n int, err error) {
 	}
 
 	n += n1
-	var s string
+	var s WeakString
 	n1, s, err = UnmarshalString(buf[n:])
 	le.tags = Tags(s)
 
-	return n + n1, err
-}
-
-func (le *LogEvent) UnmarshalCopy(buf []byte) (n int, err error) {
-	n, le.ts, err = UnmarshalInt64(buf)
-	if err != nil {
-		return 0, err
-	}
-	var n1 int
-	n1, le.src, err = UnmarshalStringCopy(buf[n:])
-	if err != nil {
-		return
-	}
-
-	n += n1
-	var s string
-	n1, s, err = UnmarshalString(buf[n:])
-	le.tags = Tags(s)
 	return n + n1, err
 }
 

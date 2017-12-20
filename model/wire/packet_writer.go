@@ -19,9 +19,10 @@ func NewWriter(encoder model.MessageEncoder) *Writer {
 	return w
 }
 
+// MakeBtsBuf writes a log context with header
 func (w *Writer) MakeBtsBuf(header model.SSlice, lines []string) ([]byte, error) {
 	w.bbw.Reset(w.bbw.Buf(), true)
-	bf, err := w.bbw.Allocate(header.Size())
+	bf, err := w.bbw.Allocate(header.Size(), true)
 	if err != nil {
 		return nil, err
 	}

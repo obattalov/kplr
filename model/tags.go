@@ -15,7 +15,7 @@ type (
 	// Tags is a string in which contains values in format
 	// <tagName>=<tagValue>|[<tagName>=<tagValue>|]*
 	// tag names must be lower case.
-	Tags string
+	Tags WeakString
 )
 
 const (
@@ -25,22 +25,49 @@ const (
 
 func (t Tags) ContainsAll(tgs Tags) bool {
 	i := 0
-	var str string
+	var str WeakString
 	for i > -1 {
 		str, i = tgs.nextTag(i)
-		idx := strings.Index(string(t), str)
+		idx := strings.Index(string(t), string(str))
 		if idx == -1 {
 			return false
 		}
 
-		if !strings.Contains(string(t), str) {
+		if !strings.Contains(string(t), string(str)) {
 			return false
 		}
 	}
 	return true
 }
 
-func (t Tags) nextTag(i int) (string, int) {
+func (t Tags) GetTagNames() []WeakString {
+	ws := make([]WeakString, 0, 10)
+	s := string(t)
+	for {
+		idx := 0
+		for idx < len(s) && s[idx] != cTagSeparator {
+			idx++
+		}
+
+		idx++
+		if idx >= len(s) {
+			break
+		}
+
+		s = s[idx:]
+		idx = 0
+		for idx < len(s) && s[idx] != cTagValueSeparator {
+			idx++
+		}
+		if idx >= len(s) {
+			break
+		}
+		ws = append(ws, WeakString(s[:idx]))
+	}
+	return ws
+}
+
+func (t Tags) nextTag(i int) (WeakString, int) {
 	tag := string(t)
 	if i >= len(tag) {
 		return "", -1
@@ -53,12 +80,12 @@ func (t Tags) nextTag(i int) (string, int) {
 	for i2 := i + 1; i2 < len(tag); i2++ {
 		if tag[i2] == cTagSeparator {
 			if i2+1 == len(tag) {
-				return tag[i : i2+1], -1
+				return WeakString(tag[i : i2+1]), -1
 			}
-			return tag[i : i2+1], i2
+			return WeakString(tag[i : i2+1]), i2
 		}
 	}
-	return tag[i:], -1
+	return WeakString(tag[i:]), -1
 }
 
 func (t Tags) GetTag(key string) string {
@@ -69,7 +96,7 @@ func (t Tags) GetTag(key string) string {
 	kv := ByteArrayToString(b.Bytes())
 
 	tags := string(t)
-	i := strings.Index(tags, kv)
+	i := strings.Index(tags, string(kv))
 	if i == -1 {
 		return ""
 	}
@@ -81,6 +108,20 @@ func (t Tags) GetTag(key string) string {
 		}
 	}
 	return tags[st:]
+}
+
+// Adds t2 to t and returns concatenation
+func (t Tags) Add(k, v string) Tags {
+	var b bytes.Buffer
+	b.WriteString(string(t))
+	if b.Len() == 0 {
+		b.WriteByte(cTagSeparator)
+	}
+	b.WriteString(strings.ToLower(k))
+	b.WriteByte(cTagValueSeparator)
+	b.WriteString(v)
+	b.WriteByte(cTagSeparator)
+	return Tags(b.String())
 }
 
 func IsTsTag(tg string) bool {
@@ -98,7 +139,7 @@ func TagSubst(tag, val string) Tags {
 }
 
 // MapToTags turns the map m to Tags string using key order kOrder
-func MapToTags(kOrder []string, m map[string]string) Tags {
+func MapToTags(kOrder SSlice, m map[WeakString]WeakString) Tags {
 	if len(kOrder) == 0 {
 		return Tags("")
 	}
@@ -113,9 +154,9 @@ func MapToTags(kOrder []string, m map[string]string) Tags {
 		if b.Len() == 0 {
 			b.WriteByte(cTagSeparator)
 		}
-		b.WriteString(key)
+		b.WriteString(string(key))
 		b.WriteByte(cTagValueSeparator)
-		b.WriteString(v)
+		b.WriteString(string(v))
 		b.WriteByte(cTagSeparator)
 	}
 

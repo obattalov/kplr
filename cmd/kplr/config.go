@@ -18,6 +18,9 @@ type (
 		HttpListenOn    string
 		HttpShtdwnToSec int
 		HttpDebugMode   bool
+
+		JrnlChunkMaxSize int64
+		JrnlMaxSize      int64
 	}
 )
 
@@ -28,10 +31,12 @@ const (
 	defaultKplrJrnlsDir      = defaultKeplerDir + "journals/"
 	defaultConfigFile        = defaultKeplerDir + "config.json"
 	defaultLog4gCongigFile   = defaultKeplerDir + "log4g.properties"
-	defaultZebraPort         = ":9966"
+	defaultZebraPort         = "0.0.0.0:9966"
 	defaultSessTimeoutSec    = 30
 	defaultHttpAddr          = ":8080"
 	defaultHttpShutdownToSec = 5
+	defaultJrnChunkMaxSize   = int64(50000000)      // 50Mb
+	defaultJrnlMaxSize       = int64(1000000000000) // 1Tb
 )
 
 func newDefaultConfig() *Config {
@@ -42,6 +47,8 @@ func newDefaultConfig() *Config {
 	cfg.HttpListenOn = defaultHttpAddr
 	cfg.HttpShtdwnToSec = defaultHttpShutdownToSec
 	cfg.HttpDebugMode = false
+	cfg.JrnlChunkMaxSize = defaultJrnChunkMaxSize
+	cfg.JrnlMaxSize = defaultJrnlMaxSize
 	return cfg
 }
 
@@ -53,6 +60,8 @@ func (c *Config) String() string {
 		"\n\tHttpListenOn=", c.HttpListenOn,
 		"\n\tHttpShtdwnToSec=", c.HttpShtdwnToSec,
 		"\n\tHttpDebugMode=", c.HttpDebugMode,
+		"\n\tJrnlChunkMaxSize=", kplr.FormatSize(c.JrnlChunkMaxSize),
+		"\n\tJrnlMaxSize=", kplr.FormatSize(c.JrnlMaxSize),
 	)
 }
 
@@ -69,6 +78,20 @@ func (c *Config) IsHttpDebugMode() bool {
 	return c.HttpDebugMode
 }
 
+// ============================ JournalConfig ================================
+func (c *Config) GetJournalDir() string {
+	return c.JournalsDir
+}
+
+func (c *Config) GetJournalChunkSize() int64 {
+	return c.JrnlChunkMaxSize
+}
+
+func (c *Config) GetJournalMaxSize() int64 {
+	return c.JrnlMaxSize
+}
+
+// =============================== Config ====================================
 func (c *Config) Apply(c2 *Config) {
 	if c2.ListenOn != "" {
 		c.ListenOn = c2.ListenOn
@@ -78,6 +101,12 @@ func (c *Config) Apply(c2 *Config) {
 	}
 	if c2.JournalsDir != "" {
 		c.JournalsDir = c2.JournalsDir
+	}
+	if c2.JrnlMaxSize > 0 {
+		c.JrnlMaxSize = c2.JrnlMaxSize
+	}
+	if c2.JrnlChunkMaxSize > 0 {
+		c.JrnlChunkMaxSize = c2.JrnlChunkMaxSize
 	}
 	if c2.HttpDebugMode {
 		c.HttpDebugMode = c2.HttpDebugMode

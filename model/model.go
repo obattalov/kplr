@@ -7,19 +7,6 @@ import (
 )
 
 type (
-	// The Descriptor interface provides an abstraction for a kplr environment.
-	// It provides helper methods for describing the environment specifics,
-	// for instance, it returns Meta object for event group headers, which
-	// could contain different fields in different environments. The Descriptor
-	// implementation can return journal id calculated by the meta header etc.
-	Descriptor interface {
-		// EventGroupMeta returns Meta object for a group of objects
-		EventGroupMeta() Meta
-
-		// GetJournalId returns journal id by event group meta info
-		GetJournalId(evGrpMeta Event) string
-	}
-
 	// MessageEncoder interface provides functionality for encoding log messages
 	// to a slice of bytes
 	MessageEncoder interface {
@@ -31,12 +18,14 @@ type (
 	SimpleMessageEncoder struct{}
 
 	// SimpleLogEventEncoder encode lines to LogEvents, it sets encoding timestamp
-	SimpleLogEventEncoder struct{}
+	SimpleLogEventEncoder struct {
+		tags Tags
+	}
 )
 
 func (sme *SimpleMessageEncoder) Encode(msg string, bbw *btsbuf.Writer) error {
 	bf := []byte(msg)
-	res, err := bbw.Allocate(len(bf))
+	res, err := bbw.Allocate(len(bf), true)
 	if err != nil {
 		return err
 	}
@@ -44,11 +33,16 @@ func (sme *SimpleMessageEncoder) Encode(msg string, bbw *btsbuf.Writer) error {
 	return nil
 }
 
+// SetTags specifies tags that will be attached to each log event
+func (sle *SimpleLogEventEncoder) SetTags(tags Tags) {
+	sle.tags = tags
+}
+
 func (sle *SimpleLogEventEncoder) Encode(msg string, bbw *btsbuf.Writer) error {
 	var le LogEvent
 	ts := uint64(time.Now().UnixNano() / int64(time.Millisecond))
-	le.Reset(ts, msg, "")
-	rb, err := bbw.Allocate(le.BufSize())
+	le.Reset(ts, WeakString(msg), sle.tags)
+	rb, err := bbw.Allocate(le.BufSize(), true)
 	if err != nil {
 		return err
 	}

@@ -4,7 +4,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/kplr-io/kplr/journal"
 	"github.com/kplr-io/kplr/model"
 )
 
@@ -14,6 +13,11 @@ func TestSimple(t *testing.T) {
 	le.Reset(1234, "Hello test", "")
 	if f(&le) {
 		t.Fatal("Should accept everything and le")
+	}
+
+	f = getFunc("select limit 10", t)
+	if f != nil {
+		t.Fatal("Should be nil function")
 	}
 }
 
@@ -53,13 +57,9 @@ func TestTimestampCond(t *testing.T) {
 		t.Fatal("Should be false, true, but ", f(&le1), ", ", f(&le2))
 	}
 
-	tmf = tmf[:len(tmf)-6]
-	kq = "select where ts > '" + tmf + "' limit 10"
+	tmf = tm.Format("2006-01-02T15:04:05")
+	kq = "select where ts >='" + tmf + "' limit 10"
 	f = getFunc(kq, t)
-	t.Log("kql=", kq)
-	if f(&le1) {
-		t.Fatal("Should be false, but ", f(&le1))
-	}
 }
 
 func TestSrcCond(t *testing.T) {
@@ -84,7 +84,7 @@ func TestSrcCond(t *testing.T) {
 
 func TestTagsConds(t *testing.T) {
 	var le1 model.LogEvent
-	le1.Reset(10, "Hello test", model.MapToTags(map[string]string{"pod": "123", "key": ""}))
+	le1.Reset(10, "Hello test", model.MapToTags([]model.WeakString{"key", "pod"}, map[model.WeakString]model.WeakString{"pod": "123", "key": ""}))
 
 	f := getFunc("select where pod = \"123\" limit 10", t)
 	if f(&le1) {
@@ -114,14 +114,14 @@ func TestTagsConds(t *testing.T) {
 
 func TestLike(t *testing.T) {
 	var le1 model.LogEvent
-	le1.Reset(10, "Hello test", model.MapToTags(map[string]string{"pod": "a123f", "key": "afdf"}))
+	le1.Reset(10, "Hello test", model.MapToTags([]model.WeakString{"key", "pod"}, map[model.WeakString]model.WeakString{"pod": "a123f", "key": "afdf"}))
 
 	f := getFunc("select where pod like \"a*f?f\" limit 10", t)
 	if !f(&le1) {
 		t.Fatal("Should be true, but ", f(&le1))
 	}
 
-	le1.Reset(10, "Hello test", model.MapToTags(map[string]string{"pod": "a12f3f", "key": "afdf"}))
+	le1.Reset(10, "Hello test", model.MapToTags([]model.WeakString{"key", "pod"}, map[model.WeakString]model.WeakString{"pod": "a12f3f", "key": "afdf"}))
 	if f(&le1) {
 		t.Fatal("Should be false, but ", f(&le1))
 	}
@@ -149,7 +149,7 @@ func TestLike(t *testing.T) {
 
 func TestNot(t *testing.T) {
 	var le model.LogEvent
-	le.Reset(10, "Hello test", model.MapToTags(map[string]string{"pod": "a123f", "key": "afdf"}))
+	le.Reset(10, "Hello test", model.MapToTags([]model.WeakString{"key", "pod"}, map[model.WeakString]model.WeakString{"pod": "a123f", "key": "afdf"}))
 
 	f := getFunc("select where not (pod like \"a*f?f\") limit 10", t)
 	if f(&le) {
@@ -179,7 +179,7 @@ func TestNot(t *testing.T) {
 
 func TestNoSourceExp(t *testing.T) {
 	var le model.LogEvent
-	le.Reset(10, "Hello test", model.MapToTags(map[string]string{"pod": "a123f", "key": "afdf"}))
+	le.Reset(10, "Hello test", model.MapToTags([]model.WeakString{"key", "pod"}, map[model.WeakString]model.WeakString{"pod": "a123f", "key": "afdf"}))
 	exp := getExp("select where ts=1234 limit 1", t)
 	if exp.Priority != 0 || !exp.Expr(&le) {
 		t.Fatal("Should be comprehensive, because of ts check")
@@ -198,7 +198,7 @@ func TestNoSourceExp(t *testing.T) {
 
 func TestSourceExp(t *testing.T) {
 	var le model.LogEvent
-	le.Reset(10, "Hello test", model.MapToTags(map[string]string{"pod": "a123f", "key": "afdf"}))
+	le.Reset(10, "Hello test", model.MapToTags([]model.WeakString{"key", "pod"}, map[model.WeakString]model.WeakString{"pod": "a123f", "key": "afdf"}))
 	exp := getExp("select where pod=1234 limit 1", t)
 	if exp.Priority != 1 || exp.Expr(&le) {
 		t.Fatal("Should be comprehensive, because of ts check")
@@ -229,8 +229,17 @@ func TestSourceExp(t *testing.T) {
 	}
 }
 
-func getFunc(q string, t *testing.T) journal.FilterF {
-	r, err := NewQuery(q)
+func TestSourceExp2(t *testing.T) {
+	exp := getExp("select where pod like \"system*\" limit 300", t)
+	var le model.LogEvent
+	le.Reset(10, "Hello test", model.MapToTags([]model.WeakString{"key", "pod"}, map[model.WeakString]model.WeakString{"pod": "system.log", "key": "afdf"}))
+	if exp.Priority != 3 || !exp.Expr(&le) {
+		t.Fatal("Should be comprehensive, because of ts check priority=", exp.Priority)
+	}
+}
+
+func getFunc(q string, t *testing.T) model.FilterF {
+	r, err := NewQuery(q, nil)
 	if err != nil {
 		t.Fatal("kql=\"", q, "\" while parsing, got an unexpected err=", err)
 		return nil
@@ -239,11 +248,11 @@ func getFunc(q string, t *testing.T) journal.FilterF {
 	return r.GetFilterF()
 }
 
-func getExp(q string, t *testing.T) ExprDesc {
-	r, err := NewQuery(q)
+func getExp(q string, t *testing.T) model.ExprDesc {
+	r, err := NewQuery(q, map[string]bool{"pod": true, "key": true, "t": true})
 	if err != nil {
 		t.Fatal("kql=\"", q, "\" while parsing, got an unexpected err=", err)
-		return ExprDesc{Priority: -1}
+		return model.ExprDesc{Priority: -1}
 	}
 
 	return r.srcExp

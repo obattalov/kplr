@@ -6,12 +6,14 @@ import (
 
 func TestParse(t *testing.T) {
 	testOk(t, "select limit 120")
-	testOk(t, "select tail limit 100")
-	testOk(t, "select tail limit 100 offset 123")
-	testOk(t, "select tail 'format-%ts-%pod' limit 100")
-	testOk(t, "select tail from c1 limit 100")
-	testOk(t, "select tail from c1,123Kd limit 100")
-	testOk(t, "select tail from c1,123Kd WHERE a='1234' AND bbb>=adfadf234798* limit 100")
+	testOk(t, "select limit 100")
+	testOk(t, "select offset 123 limit 100")
+	testOk(t, "select format 'format-%ts-%pod' limit 100")
+	testOk(t, "select format 'format-%ts-%pod' position tail limit 100")
+	testOk(t, "select format 'format-%ts-%pod' position 'head' limit 100")
+	testOk(t, "select position head limit 100")
+	testOk(t, "select position asdf limit 100")
+	testOk(t, "select position 'hasdf123' limit 100")
 	testOk(t, "select WHERE NOT a='1234' limit 100")
 	testOk(t, "select WHERE NOT (a='1234' AND c=abc) limit 100")
 	testOk(t, "select WHERE NOT a='1234' AND c=abc limit 100")
@@ -22,12 +24,51 @@ func TestParse(t *testing.T) {
 	testOk(t, "select WHERE (NOT (a='1234' AND c=abc)) or not (x=123 or c = abc) limit 100")
 	testOk(t, "select WHERE a='1234' AND bbb>=adfadf234798* or xxx = yyy limit 100")
 	testOk(t, "select WHERE a='1234' AND bbb like 'adfadf234798*' or xxx = yyy limit 10")
+	testOk(t, "SELECT WHERE filename=\"system.log\" or filename=\"wifi.log\" OFFSET 0 LIMIT -1")
 }
 
-func testOk(t *testing.T, kql string) {
+func TestParams(t *testing.T) {
+	s := testOk(t, "Select format 'abc' where a = '123' position tail offset -10 limit 13")
+	if s.Format != "abc" || s.Position.PosId != "tail" || *s.Offset != -10 || s.Limit != 13 {
+		t.Fatal("Something goes wrong ", s)
+	}
+}
+
+func TestPosition(t *testing.T) {
+	s := testOk(t, "Select format 'abc' where a = '123' position 'tail' offset -10 limit 13")
+	if s.Position.PosId != "tail" {
+		t.Fatal("Something goes wrong ", s)
+	}
+
+	s = testOk(t, "Select format 'abc' where a = '123' position tail offset -10 limit 13")
+	if s.Position.PosId != "tail" {
+		t.Fatal("Something goes wrong ", s)
+	}
+
+	posId := "AAAABXNyY0lkAAAE0gAAAAAAAeIqAAAAGHNyYzEyMzQ3OUAkJV8gQTIzNEF6cUlkMgAAAA4AAAAAAAAE0g=="
+	s = testOk(t, "Select format 'abc' where a = '123' position '"+posId+"' offset -10 limit 13")
+	if s.Position.PosId != posId {
+		t.Fatal("Something goes wrong ", s)
+	}
+}
+
+func TestParseWhere(t *testing.T) {
+	testWhereOk(t, "a=adsf and b=adsf")
+}
+
+func testWhereOk(t *testing.T, whr string) *Expression {
+	e, err := ParseExpr(whr)
+	if err != nil {
+		t.Fatal("whr=\"", whr, "\" unexpected err=", err)
+	}
+	return e
+}
+
+func testOk(t *testing.T, kql string) *Select {
 	s, err := Parse(kql)
 	if err != nil {
 		t.Fatal("kql=\"", kql, "\" unexpected err=", err)
 	}
 	t.Log(s.Limit)
+	return s
 }

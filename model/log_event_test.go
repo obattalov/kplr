@@ -25,17 +25,6 @@ func BenchmarkUnmarshalLogEventFast(b *testing.B) {
 	}
 }
 
-func BenchmarkUnmarshalLogEventSlow(b *testing.B) {
-	var le LogEvent
-	le.Reset(123456, tstStr, tstTags)
-	var store [2000]byte
-	le.Marshal(store[:])
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
-		le.UnmarshalCopy(store[:])
-	}
-}
-
 func TestBufSize(t *testing.T) {
 	var le LogEvent
 	le.Reset(123412341234123, "ha ha ha", tstTags)
