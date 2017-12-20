@@ -8,27 +8,25 @@ import (
 type (
 	Writer struct {
 		encoder model.MessageEncoder
-		hdrMeta model.Meta
 		bbw     btsbuf.Writer
 	}
 )
 
-func NewWriter(encoder model.MessageEncoder, hdrMeta model.Meta) *Writer {
+func NewWriter(encoder model.MessageEncoder) *Writer {
 	w := new(Writer)
 	w.encoder = encoder
-	w.hdrMeta = hdrMeta
 	w.bbw.Reset(make([]byte, 4096), true)
 	return w
 }
 
-func (w *Writer) MakeBtsBuf(header model.Event, lines []string) ([]byte, error) {
+func (w *Writer) MakeBtsBuf(header model.SSlice, lines []string) ([]byte, error) {
 	w.bbw.Reset(w.bbw.Buf(), true)
-	bf, err := w.bbw.Allocate(header.Size(w.hdrMeta))
+	bf, err := w.bbw.Allocate(header.Size())
 	if err != nil {
 		return nil, err
 	}
 
-	_, err = model.MarshalEvent(w.hdrMeta, header, bf)
+	_, err = model.MarshalSSlice(header, bf)
 	if err != nil {
 		return nil, err
 	}

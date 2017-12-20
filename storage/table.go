@@ -3,61 +3,74 @@ package storage
 import (
 	"errors"
 	"sync"
-	"sync/atomic"
 
-	"github.com/emirpasic/gods/maps/treemap"
 	"github.com/kplr-io/kplr/model"
 	"github.com/kplr-io/kplr/model/query"
 )
 
 type (
 	Table interface {
-		Upsert(tags string) error
-		GetSrcId(qry *query.Query) []string
+		// Upserts tags. tags must contain source Id, the tags and kOrder
+		// can contain weak strings. TODO: introduce it!
+		Upsert(kOrder []string, tags map[string]string) error
+		GetSrcId(qry *query.Query) ([]string, error)
 	}
 
 	table struct {
-		lock     sync.Mutex
-		cur_id   int
-		v2iStore atomic.Value
-
-		vals2id *treemap.Map
-		// every id contains tags string
-		id2vals *treemap.Map
+		lock sync.Mutex
+		tags map[model.Tags]string
 	}
 )
 
 func NewTable() Table {
 	t := new(table)
+	t.tags = make(map[model.Tags]string)
 	return t
 }
 
-func (t *table) Upsert(tags string) error {
-	m := t.v2iStore.Load().(map[string]int)
-	if _, ok := m[tags]; ok {
-		return nil
+func (t *table) Upsert(kOrder []string, m map[string]string) error {
+	srcId, ok := m[model.TAG_SRC_ID]
+	if !ok {
+		return errors.New("expected " + model.TAG_SRC_ID + " tag")
 	}
-
-	if model.GetTag(tags, model.TAG_SRC_ID) == "" {
-		return errors.New("tags must contain " + model.TAG_SRC_ID + " tag")
-	}
+	tags := model.MapToTags(kOrder, m)
 
 	t.lock.Lock()
 	defer t.lock.Unlock()
 
-	t.cur_id++
-	t.vals2id.Put(tags, t.cur_id)
-	t.id2vals.Put(t.cur_id, tags)
+	if _, ok := t.tags[tags]; ok {
+		return nil
+	}
 
-	m = make(map[string]int, t.vals2id.Size())
-	t.vals2id.Each(func(key interface{}, value interface{}) {
-		m[key.(string)] = value.(int)
-	})
-	t.v2iStore.Store(m)
+	t.tags[tags] = srcId
+
 	return nil
 }
 
-func (t *table) GetSrcId(qry *query.Query) []string {
-	// TODO right now returns whateever we have in the query
-	return qry.GetSources()
+func (t *table) GetSrcId(qry *query.Query) ([]string, error) {
+	t.lock.Lock()
+	defer t.lock.Unlock()
+
+	ed := qry.GetSrcExpr()
+	if ed.Priority == 0 {
+		return nil, errors.New("The query condition doesn't contains tags, cannot identify sources")
+	}
+	var le model.LogEvent
+	m := make(map[string]string)
+	for tags, srcId := range t.tags {
+		if _, ok := m[srcId]; ok {
+			continue
+		}
+		le.Reset(0, "", tags)
+		if ed.Expr(&le) {
+			m[srcId] = srcId
+		}
+	}
+
+	res := make([]string, 0, len(m))
+	for _, sid := range m {
+		res = append(res, sid)
+	}
+
+	return res, nil
 }

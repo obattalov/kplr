@@ -9,11 +9,7 @@ import (
 )
 
 func TestSimple(t *testing.T) {
-	f := getFunc("select limit 10", t)
-	if f(nil) {
-		t.Fatal("Should accept everything")
-	}
-
+	f := getFunc("select WHERE ts=1234 limit 10", t)
 	var le model.LogEvent
 	le.Reset(1234, "Hello test", "")
 	if f(&le) {
@@ -88,7 +84,7 @@ func TestSrcCond(t *testing.T) {
 
 func TestTagsConds(t *testing.T) {
 	var le1 model.LogEvent
-	le1.Reset(10, "Hello test", model.TagsToStr(map[string]string{"pod": "123", "key": ""}))
+	le1.Reset(10, "Hello test", model.MapToTags(map[string]string{"pod": "123", "key": ""}))
 
 	f := getFunc("select where pod = \"123\" limit 10", t)
 	if f(&le1) {
@@ -118,14 +114,14 @@ func TestTagsConds(t *testing.T) {
 
 func TestLike(t *testing.T) {
 	var le1 model.LogEvent
-	le1.Reset(10, "Hello test", model.TagsToStr(map[string]string{"pod": "a123f", "key": "afdf"}))
+	le1.Reset(10, "Hello test", model.MapToTags(map[string]string{"pod": "a123f", "key": "afdf"}))
 
 	f := getFunc("select where pod like \"a*f?f\" limit 10", t)
 	if !f(&le1) {
 		t.Fatal("Should be true, but ", f(&le1))
 	}
 
-	le1.Reset(10, "Hello test", model.TagsToStr(map[string]string{"pod": "a12f3f", "key": "afdf"}))
+	le1.Reset(10, "Hello test", model.MapToTags(map[string]string{"pod": "a12f3f", "key": "afdf"}))
 	if f(&le1) {
 		t.Fatal("Should be false, but ", f(&le1))
 	}
@@ -153,7 +149,7 @@ func TestLike(t *testing.T) {
 
 func TestNot(t *testing.T) {
 	var le model.LogEvent
-	le.Reset(10, "Hello test", model.TagsToStr(map[string]string{"pod": "a123f", "key": "afdf"}))
+	le.Reset(10, "Hello test", model.MapToTags(map[string]string{"pod": "a123f", "key": "afdf"}))
 
 	f := getFunc("select where not (pod like \"a*f?f\") limit 10", t)
 	if f(&le) {
@@ -181,6 +177,58 @@ func TestNot(t *testing.T) {
 	}
 }
 
+func TestNoSourceExp(t *testing.T) {
+	var le model.LogEvent
+	le.Reset(10, "Hello test", model.MapToTags(map[string]string{"pod": "a123f", "key": "afdf"}))
+	exp := getExp("select where ts=1234 limit 1", t)
+	if exp.Priority != 0 || !exp.Expr(&le) {
+		t.Fatal("Should be comprehensive, because of ts check")
+	}
+
+	exp = getExp("select where src contains '123' limit 1", t)
+	if exp.Priority != 0 || !exp.Expr(&le) {
+		t.Fatal("Should be comprehensive, because of ts src")
+	}
+
+	exp = getExp("select where src contains '123' or ts=1234 AND not t=123 limit 1", t)
+	if exp.Priority != 3 || !exp.Expr(&le) {
+		t.Fatal("Should be comprehensive, because of ts src Priority=", exp.Priority)
+	}
+}
+
+func TestSourceExp(t *testing.T) {
+	var le model.LogEvent
+	le.Reset(10, "Hello test", model.MapToTags(map[string]string{"pod": "a123f", "key": "afdf"}))
+	exp := getExp("select where pod=1234 limit 1", t)
+	if exp.Priority != 1 || exp.Expr(&le) {
+		t.Fatal("Should be comprehensive, because of ts check")
+	}
+	exp = getExp("select where pod=a123f limit 1", t)
+	if !exp.Expr(&le) {
+		t.Fatal("Should be comprehensive, because of ts check")
+	}
+
+	exp = getExp("select where pod=1234 or ts=234 limit 1", t)
+	if exp.Priority != 1 || exp.Expr(&le) {
+		t.Fatal("Should ignore or with ts condition, but Priority=", exp.Priority)
+	}
+
+	exp = getExp("select where pod=a123f and ts=234 and src contains asd limit 1", t)
+	if exp.Priority != 1 || !exp.Expr(&le) {
+		t.Fatal("Should ignore or with ts condition, but Priority=", exp.Priority)
+	}
+
+	exp = getExp("select where pod=a123f and ts<234 and src contains asd limit 1", t)
+	if exp.Priority != 1 || !exp.Expr(&le) {
+		t.Fatal("Should ignore or with ts condition, but Priority=", exp.Priority)
+	}
+
+	exp = getExp("select where pod like a123f and ts<234 and src contains asd limit 1", t)
+	if exp.Priority != 3 || !exp.Expr(&le) {
+		t.Fatal("Should ignore or with ts condition, but Priority=", exp.Priority)
+	}
+}
+
 func getFunc(q string, t *testing.T) journal.FilterF {
 	r, err := NewQuery(q)
 	if err != nil {
@@ -189,4 +237,14 @@ func getFunc(q string, t *testing.T) journal.FilterF {
 	}
 
 	return r.GetFilterF()
+}
+
+func getExp(q string, t *testing.T) ExprDesc {
+	r, err := NewQuery(q)
+	if err != nil {
+		t.Fatal("kql=\"", q, "\" while parsing, got an unexpected err=", err)
+		return ExprDesc{Priority: -1}
+	}
+
+	return r.srcExp
 }

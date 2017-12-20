@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"sort"
 	"time"
 
 	"github.com/jrivets/log4g"
@@ -12,6 +13,7 @@ import (
 	"github.com/kplr-io/kplr/journal"
 	"github.com/kplr-io/kplr/model"
 	"github.com/kplr-io/kplr/mpool"
+	"github.com/kplr-io/kplr/storage"
 	"github.com/kplr-io/zebra"
 )
 
@@ -23,7 +25,7 @@ type (
 
 	Transport struct {
 		MemPool   mpool.Pool         `inject:"mPool"`
-		ModelDesc model.Descriptor   `inject:"mdlDesc"`
+		Table     storage.Table      `inject:"table"`
 		JrnlCtrlr journal.Controller `inject:""`
 
 		logger  log4g.Logger
@@ -92,15 +94,23 @@ func (t *Transport) OnRead(r zebra.Reader, n int) error {
 		return errors.New("empty list")
 	}
 
-	var header [10]interface{}
-	meta := model.Event(header[:])
-	_, err = model.UnmarshalEvent(t.ModelDesc.EventGroupMeta(), bbi.Get(), meta)
+	var sArr [20]string
+	ss := model.SSlice(sArr[:])
+	ss, _, err = model.UnmarshalSSlice(ss, bbi.Get())
 	if err != nil {
 		t.logger.Error("Could not unmarshal header err=", err)
 		return err
 	}
 
-	jid := t.ModelDesc.GetJournalId(meta)
+	//	var header [10]interface{}
+	//	meta := model.Event(header[:])
+	//	_, err = model.UnmarshalEvent(t.ModelDesc.EventGroupMeta(), bbi.Get(), meta)
+	//	if err != nil {
+	//		t.logger.Error("Could not unmarshal header err=", err)
+	//		return err
+	//	}
+
+	//	jid := t.ModelDesc.GetJournalId(meta)
 	var jrnl kjrnl.Writer
 	jrnl, err = t.JrnlCtrlr.GetWriter(jid)
 	if err != nil {
@@ -116,6 +126,39 @@ func (t *Transport) OnRead(r zebra.Reader, n int) error {
 	}
 
 	return r.ReadResponse(nil)
+}
+
+// parseHeader - parses header, updates tags index in the table and returns
+// journal Id, or returns an error if any
+func (t *Transport) parseHeader(ss model.SSlice) (string, error) {
+	if len(ss) < 2 {
+		return "", errors.New("Expecting at least one pair - source id in tags of the header.")
+	}
+	if len(ss)&1 == 1 {
+		return "", errors.New("header must contain even number of strings(key:value pairs)")
+	}
+
+	// Sorting keys, before inserting them into the table
+	var sArr [20]string
+	srtKeys = sArr[:0]
+	m := make(map[string]string, len(ss))
+	for i := 0; i < len(ss); i += 2 {
+		tag := ss[i]
+		m[tag] = ss[i+1]
+		idx := sort.SearchStrings(srtKeys, tag)
+		srtKeys = append(srtKeys, key)
+		if idx < len(srtKeys)-1 {
+			copy(srtKeys[idx+1:], srtKeys[idx:])
+		}
+		srtKeys[idx] = key
+	}
+
+	srcId, ok := model.CopyString(m[model.TAG_SRC_ID])
+	if !ok {
+		return "", errors.New("No expected tag " + model.TAG_SRC_ID + " in the header.")
+	}
+	m[model.TAG_SRC_ID] = srcId
+	return srcId, t.Table.Upsert(srtKeys, m)
 }
 
 func noAuthFunc(aKey, sKey string) bool {

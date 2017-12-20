@@ -8,11 +8,11 @@ type (
 	LogEvent struct {
 		ts   int64
 		src  string
-		tags string
+		tags Tags
 	}
 )
 
-func (le *LogEvent) Reset(ts uint64, src, tags string) {
+func (le *LogEvent) Reset(ts uint64, src string, tags Tags) {
 	le.ts = int64(ts)
 	le.src = src
 	le.tags = tags
@@ -26,7 +26,7 @@ func (le *LogEvent) Timestamp() uint64 {
 	return uint64(le.ts)
 }
 
-func (le *LogEvent) Tags() string {
+func (le *LogEvent) Tags() Tags {
 	return le.tags
 }
 
@@ -37,7 +37,7 @@ func (le *LogEvent) Tag(tag string) interface{} {
 	case TAG_TS:
 		return le.ts
 	default:
-		return GetTag(le.tags, tag)
+		return le.tags.GetTag(tag)
 	}
 }
 
@@ -58,7 +58,7 @@ func (le *LogEvent) Marshal(buf []byte) (int, error) {
 	}
 
 	n += n1
-	n1, err = MarshalString(le.tags, buf[n:])
+	n1, err = MarshalString(string(le.tags), buf[n:])
 
 	return n + n1, err
 }
@@ -76,7 +76,9 @@ func (le *LogEvent) Unmarshal(buf []byte) (n int, err error) {
 	}
 
 	n += n1
-	n1, le.tags, err = UnmarshalString(buf[n:])
+	var s string
+	n1, s, err = UnmarshalString(buf[n:])
+	le.tags = Tags(s)
 
 	return n + n1, err
 }
@@ -93,7 +95,9 @@ func (le *LogEvent) UnmarshalCopy(buf []byte) (n int, err error) {
 	}
 
 	n += n1
-	n1, le.tags, err = UnmarshalString(buf[n:])
+	var s string
+	n1, s, err = UnmarshalString(buf[n:])
+	le.tags = Tags(s)
 	return n + n1, err
 }
 

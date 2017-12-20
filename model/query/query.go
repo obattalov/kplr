@@ -17,6 +17,7 @@ type (
 	Query struct {
 		qSel   *kql.Select
 		fltF   journal.FilterF
+		srcExp ExprDesc
 		srcIds []string
 	}
 
@@ -24,11 +25,37 @@ type (
 	// LogEvent value and it returns the evanluation result
 	ChkF func(le *model.LogEvent) bool
 
+	IndexCond struct {
+		Tag   string
+		Op    string
+		Value string
+	}
+
+	// ExprDesc - an expressing descriptor, which contains the expression
+	// function valueation (ChkF) and the index descriptor, if any. The index
+	// descriptor allows to use the index for selecting records for the evaluation
+	ExprDesc struct {
+		// The index can be used to select records by the condition. THe field
+		// does make sense only for Priorities 1 and 2
+		Index IndexCond
+
+		// Function to calcualte the expression
+		Expr ChkF
+
+		// Priority:
+		// 0 - disregard, always true or not relevant at all
+		// 1 - indexed by exact value
+		// 2 - indexed by greater/less condition or interval
+		// 3 - cannot be indexed, all records must be considered
+		Priority int
+	}
+
 	// trvrsl_ctx a structure which allows to traverse WHERE condition in kql.Select
 	// to return journal.FilterF function
 	trvrsl_ctx struct {
-		// tagsOnly whether ts and src tags should be taken into account
+		// tagsOnly whether ts and src tags should not be taken into account
 		tagsOnly bool
+		exp      ExprDesc
 	}
 )
 
@@ -44,8 +71,15 @@ func NewQuery(query string) (*Query, error) {
 		return nil, err
 	}
 
+	tc.tagsOnly = true
+	err = tc.getOrConds(s.Where.Or)
+	if err != nil {
+		return nil, err
+	}
+
 	r := new(Query)
 	r.qSel = s
+	r.srcExp = tc.exp
 	r.fltF = f
 	r.srcIds = make([]string, len(s.From.SrcIds))
 	if len(s.From.SrcIds) > 0 {
@@ -61,8 +95,8 @@ func (r *Query) GetFilterF() journal.FilterF {
 	return r.fltF
 }
 
-func (r *Query) GetSources() []string {
-	return r.srcIds
+func (r *Query) GetSrcExpr() ExprDesc {
+	return r.srcExp
 }
 
 // Limit returns number of records that should be read, if 0 is returned
@@ -94,86 +128,136 @@ func neglect(f ChkF) ChkF {
 // if LogEvent does NOT match the condition)
 func (tc *trvrsl_ctx) buildFilterF(query *kql.Select) (journal.FilterF, error) {
 	if query.Where == nil || len(query.Where.Or) == 0 {
-		return nil, nil
+		return nil, errors.New("Expecting WHERE condition for selecting sources")
 	}
 
-	f, err := tc.getOrConds(query.Where.Or)
+	err := tc.getOrConds(query.Where.Or)
 	if err != nil {
 		return nil, err
 	}
 
 	// Filter function must return true if the record should be filtered, so
 	// the condition value is false
-	return journal.FilterF(neglect(f)), nil
+	return journal.FilterF(neglect(tc.exp.Expr)), nil
 }
 
-func (tc *trvrsl_ctx) getOrConds(ocn []*kql.OrCondition) (ChkF, error) {
+func (tc *trvrsl_ctx) getOrConds(ocn []*kql.OrCondition) (err error) {
 	if len(ocn) == 0 {
-		return positive, nil
+		tc.exp.Priority = 0
+		tc.exp.Expr = positive
+		return nil
 	}
 
 	if len(ocn) == 1 {
 		return tc.getXConds(ocn[0].And)
 	}
 
-	f2, err := tc.getOrConds(ocn[1:])
+	err = tc.getOrConds(ocn[1:])
 	if err != nil {
-		return f2, err
+		return err
+	}
+	exp2 := tc.exp
+
+	err = tc.getXConds(ocn[0].And)
+	if err != nil {
+		return err
 	}
 
-	f, err := tc.getXConds(ocn[0].And)
-	if err != nil {
-		return f, err
+	if exp2.Priority == 0 {
+		return nil
 	}
 
-	return func(le *model.LogEvent) bool {
-		return f(le) || f2(le)
-	}, nil
+	if tc.exp.Priority == 0 {
+		tc.exp = exp2
+		return nil
+	}
+
+	tc.exp.chooseWorse(&exp2)
+	f1 := tc.exp.Expr
+	f2 := exp2.Expr
+	tc.exp.Expr = func(le *model.LogEvent) bool {
+		return f1(le) || f2(le)
+	}
+	return nil
 }
 
-func (tc *trvrsl_ctx) getXConds(cn []*kql.XCondition) (ChkF, error) {
+func (tc *trvrsl_ctx) getXConds(cn []*kql.XCondition) (err error) {
 	if len(cn) == 0 {
-		return positive, nil
+		tc.exp.Priority = 0
+		tc.exp.Expr = positive
+		return nil
 	}
 
 	if len(cn) == 1 {
 		return tc.getXCond(cn[0])
 	}
 
-	f2, err := tc.getXConds(cn[1:])
+	err = tc.getXConds(cn[1:])
 	if err != nil {
-		return f2, err
+		return err
+	}
+	exp2 := tc.exp
+
+	err = tc.getXCond(cn[0])
+	if err != nil {
+		return err
 	}
 
-	f, err := tc.getXCond(cn[0])
-	if err != nil {
-		return f, err
+	if exp2.Priority == 0 {
+		return nil
 	}
 
-	return func(le *model.LogEvent) bool {
-		return f(le) && f2(le)
-	}, nil
+	if tc.exp.Priority == 0 {
+		tc.exp = exp2
+		return nil
+	}
+
+	tc.exp.chooseBetter(&exp2)
+	f1 := tc.exp.Expr
+	f2 := exp2.Expr
+	tc.exp.Expr = func(le *model.LogEvent) bool {
+		return f1(le) && f2(le)
+	}
+	return nil
 }
 
-func (tc *trvrsl_ctx) getXCond(xc *kql.XCondition) (f ChkF, err error) {
+func (exp *ExprDesc) chooseBetter(exp2 *ExprDesc) {
+	if exp.Priority > exp2.Priority {
+		exp.Index = exp2.Index
+		exp.Priority = exp2.Priority
+	}
+}
+
+func (exp *ExprDesc) chooseWorse(exp2 *ExprDesc) {
+	if exp.Priority < exp2.Priority {
+		exp.Index = exp2.Index
+		exp.Priority = exp2.Priority
+	}
+}
+
+func (tc *trvrsl_ctx) getXCond(xc *kql.XCondition) (err error) {
 	if xc.Expr != nil {
-		f, err = tc.getOrConds(xc.Expr.Or)
+		err = tc.getOrConds(xc.Expr.Or)
 	} else {
-		f, err = tc.getCond(xc.Cond)
+		err = tc.getCond(xc.Cond)
 	}
 
 	if err != nil {
-		return f, err
+		return err
 	}
 
 	if xc.Not {
-		return neglect(f), nil
+		if tc.exp.Priority != 0 {
+			tc.exp.Priority = 3
+		}
+		tc.exp.Expr = neglect(tc.exp.Expr)
+		return nil
 	}
 
-	return f, nil
+	return nil
 }
 
-func (tc *trvrsl_ctx) getCond(cn *kql.Condition) (ChkF, error) {
+func (tc *trvrsl_ctx) getCond(cn *kql.Condition) (err error) {
 	op := strings.ToLower(cn.Operand)
 	if op == model.TAG_TS {
 		return tc.getTsCond(cn)
@@ -186,93 +270,106 @@ func (tc *trvrsl_ctx) getCond(cn *kql.Condition) (ChkF, error) {
 	return tc.getTagCond(cn)
 }
 
-func (tc *trvrsl_ctx) getTsCond(cn *kql.Condition) (f ChkF, err error) {
+func (tc *trvrsl_ctx) getTsCond(cn *kql.Condition) (err error) {
 	if tc.tagsOnly {
-		return positive, nil
+		tc.exp.Priority = 0
+		tc.exp.Expr = positive
+		return nil
 	}
 
 	tm, err := parseTime(cn.Value)
 	if err != nil {
-		return nil, err
+		return err
 	}
 
+	tc.exp.Priority = 2
+	tc.exp.Index = IndexCond{cn.Operand, cn.Op, cn.Value}
 	switch cn.Op {
 	case "<":
-		f = func(le *model.LogEvent) bool {
+		tc.exp.Expr = func(le *model.LogEvent) bool {
 			return le.Timestamp() < tm
 		}
 	case ">":
-		f = func(le *model.LogEvent) bool {
+		tc.exp.Expr = func(le *model.LogEvent) bool {
 			return le.Timestamp() > tm
 		}
 	case "<=":
-		f = func(le *model.LogEvent) bool {
+		tc.exp.Expr = func(le *model.LogEvent) bool {
 			return le.Timestamp() <= tm
 		}
 	case ">=":
-		f = func(le *model.LogEvent) bool {
+		tc.exp.Expr = func(le *model.LogEvent) bool {
 			return le.Timestamp() >= tm
 		}
 	case "!=":
-		f = func(le *model.LogEvent) bool {
+		tc.exp.Expr = func(le *model.LogEvent) bool {
 			return le.Timestamp() != tm
 		}
 	case "=":
-		f = func(le *model.LogEvent) bool {
+		tc.exp.Priority = 1
+		tc.exp.Expr = func(le *model.LogEvent) bool {
 			return le.Timestamp() == tm
 		}
 	default:
 		err = errors.New("Unsupported operation " + cn.Op + " for timetstamp comparison")
 	}
-	return f, err
+	return err
 }
 
-func (tc *trvrsl_ctx) getSrcCond(cn *kql.Condition) (f ChkF, err error) {
+func (tc *trvrsl_ctx) getSrcCond(cn *kql.Condition) (err error) {
 	if tc.tagsOnly {
-		return positive, nil
+		tc.exp.Priority = 0
+		tc.exp.Expr = positive
+		return nil
 	}
 
-	switch strings.ToUpper(cn.Op) {
+	op := strings.ToUpper(cn.Op)
+	tc.exp.Priority = 3
+	switch op {
 	case kql.CMP_CONTAINS:
-		f = func(le *model.LogEvent) bool {
+		tc.exp.Expr = func(le *model.LogEvent) bool {
 			return strings.Contains(le.Source(), cn.Value)
 		}
 	case kql.CMP_HAS_PREFIX:
-		f = func(le *model.LogEvent) bool {
+		tc.exp.Expr = func(le *model.LogEvent) bool {
 			return strings.HasPrefix(le.Source(), cn.Value)
 		}
 	case kql.CMP_HAS_SUFFIX:
-		f = func(le *model.LogEvent) bool {
+		tc.exp.Expr = func(le *model.LogEvent) bool {
 			return strings.HasSuffix(le.Source(), cn.Value)
 		}
 	default:
 		err = errors.New("Unsupported operation " + cn.Op + " for source comparison")
 	}
-	return f, err
+	return err
 }
 
-func (tc *trvrsl_ctx) getTagCond(cn *kql.Condition) (f ChkF, err error) {
-	switch strings.ToUpper(cn.Op) {
+func (tc *trvrsl_ctx) getTagCond(cn *kql.Condition) (err error) {
+	op := strings.ToUpper(cn.Op)
+	tc.exp.Index = IndexCond{cn.Operand, op, cn.Value}
+	switch op {
 	case "=":
-		cmpStr := model.TagSubst(cn.Operand, cn.Value)
-		f = func(le *model.LogEvent) bool {
-			return strings.Contains(le.Tags(), cmpStr)
+		cmpTag := model.TagSubst(cn.Operand, cn.Value)
+		tc.exp.Priority = 1
+		tc.exp.Expr = func(le *model.LogEvent) bool {
+			return le.Tags().ContainsAll(cmpTag)
 		}
 	case kql.CMP_LIKE:
 		// test it
+		tc.exp.Priority = 3
 		_, err := path.Match(cn.Value, "abc")
 		if err != nil {
 			err = errors.New(fmt.Sprint("Wrong like expression: ", cn.Value, " err=", err))
 		} else {
-			f = func(le *model.LogEvent) bool {
-				b, _ := path.Match(cn.Value, model.GetTag(le.Tags(), cn.Operand))
+			tc.exp.Expr = func(le *model.LogEvent) bool {
+				b, _ := path.Match(cn.Value, le.Tags().GetTag(cn.Operand))
 				return b
 			}
 		}
 	default:
 		err = errors.New("Unsupported operation " + cn.Op + " for tags filtering")
 	}
-	return f, err
+	return err
 }
 
 const unix_no_zone = "2006-01-02T15:04:05"
