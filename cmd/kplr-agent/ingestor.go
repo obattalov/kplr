@@ -87,7 +87,7 @@ func (i *ingestor) connect() error {
 
 	retry := 5 * time.Second
 	for {
-		zcl, err = zebra.NewTcpClient(i.cfg.Server,
+		zcl, err = zebra.NewClient(i.cfg.Server,
 			&zebra.ClientConfig{HeartBeatMs: i.cfg.HeartBeatMs, AccessKey: i.cfg.AccessKey, SecretKey: i.cfg.SecretKey})
 		if err == nil {
 			break

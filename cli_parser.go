@@ -1,3 +1,0 @@
-package kplr
-
-type ()

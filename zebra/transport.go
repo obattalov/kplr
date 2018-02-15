@@ -49,7 +49,7 @@ func (t *Transport) DiInit() error {
 	scfg.ConnListener = t
 
 	var err error
-	t.zserver, err = zebra.NewTcpServer(&scfg)
+	t.zserver, err = zebra.NewServer(&scfg)
 	if err != nil {
 		return err
 	}
