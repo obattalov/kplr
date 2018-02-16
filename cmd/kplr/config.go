@@ -18,6 +18,8 @@ type (
 		HttpListenOn    string
 		HttpShtdwnToSec int
 		HttpDebugMode   bool
+		HttpsKeyFN      string
+		HttpsCertFN     string
 
 		JrnlChunkMaxSize int64
 		JrnlMaxSize      int64
@@ -60,6 +62,8 @@ func (c *Config) String() string {
 		"\n\tHttpListenOn=", c.HttpListenOn,
 		"\n\tHttpShtdwnToSec=", c.HttpShtdwnToSec,
 		"\n\tHttpDebugMode=", c.HttpDebugMode,
+		"\n\tHttpsKeyFN=", c.HttpsKeyFN,
+		"\n\tHttpsCertFN=", c.HttpsCertFN,
 		"\n\tJrnlChunkMaxSize=", kplr.FormatSize(c.JrnlChunkMaxSize),
 		"\n\tJrnlMaxSize=", kplr.FormatSize(c.JrnlMaxSize),
 	)
@@ -76,6 +80,14 @@ func (c *Config) GetHttpShtdwnTOSec() int {
 
 func (c *Config) IsHttpDebugMode() bool {
 	return c.HttpDebugMode
+}
+
+func (c *Config) GetHttpsCertFile() string {
+	return c.HttpsCertFN
+}
+
+func (c *Config) GetHttpsKeyFile() string {
+	return c.HttpsKeyFN
 }
 
 // ============================ JournalConfig ================================
@@ -116,6 +128,12 @@ func (c *Config) Apply(c2 *Config) {
 	}
 	if c2.HttpShtdwnToSec > 0 {
 		c.HttpShtdwnToSec = c2.HttpShtdwnToSec
+	}
+	if c2.HttpsKeyFN != "" {
+		c.HttpsKeyFN = c2.HttpsKeyFN
+	}
+	if c2.HttpsCertFN != "" {
+		c.HttpsCertFN = c2.HttpsCertFN
 	}
 }
 

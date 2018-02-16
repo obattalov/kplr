@@ -72,6 +72,9 @@ func main() {
 func parseCLP() (*Config, error) {
 	var (
 		debug_api   = kingpin.Flag("debug-api", "Enable debug mode for ReST API calls.").Bool()
+		httpEndpnt  = kingpin.Flag("api-endpoint", "Http(s) API endpoint in form <ip:port>. Https is used if TLS key and cert files are provided").Default(defaultHttpAddr).String()
+		tlsKey      = kingpin.Flag("tls-key", "TLS private key file location").String()
+		tlsCert     = kingpin.Flag("tls-cert", "TLS certificate file location").String()
 		maxJrnlSize = kingpin_addons.Size(kingpin.Flag("journal-max-size", "Specifies maximum journal size (100G, 50M etc.)").Default("1Tb"))
 		maxChnkSize = kingpin_addons.Size(kingpin.Flag("chunk-max-size", "Specifies maximum chunk size (100G, 50M etc.)").Default("50Mb"))
 		cfgFile     = kingpin.Flag("config-file", "The kplr configuration file name").Default(defaultConfigFile).String()
@@ -93,6 +96,9 @@ func parseCLP() (*Config, error) {
 		}
 	}
 
+	pCfg.HttpListenOn = *httpEndpnt
+	pCfg.HttpsCertFN = *tlsCert
+	pCfg.HttpsKeyFN = *tlsKey
 	pCfg.HttpDebugMode = *debug_api
 	pCfg.JrnlMaxSize = *maxJrnlSize
 	pCfg.JrnlChunkMaxSize = *maxChnkSize

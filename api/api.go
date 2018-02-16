@@ -32,6 +32,11 @@ type (
 		GetHttpAddress() string
 		GetHttpShtdwnTOSec() int
 		IsHttpDebugMode() bool
+
+		// GetHttpsCertFile in case of TLS returns non-empty filename with TLS cert
+		GetHttpsCertFile() string
+		// GetHttpsKeyFile in case of TLS returns non-empty filename with private key
+		GetHttpsKeyFile() string
 	}
 
 	RestApi struct {
@@ -181,9 +186,19 @@ func (ra *RestApi) run() {
 	go func() {
 		ra.logger.Info("Running listener on ", ra.Config.GetHttpAddress())
 		defer ra.logger.Info("Stopping listener")
-		// service connections
-		if err := ra.srv.ListenAndServe(); err != nil {
-			ra.logger.Warn("Got the error from the server listener err=", err)
+
+		certFN := ra.Config.GetHttpsCertFile()
+		keyFN := ra.Config.GetHttpsKeyFile()
+		if certFN != "" || keyFN != "" {
+			ra.logger.Info("Serves HTTPS connections: cert location ", certFN, ", private key at ", keyFN)
+			if err := ra.srv.ListenAndServeTLS(certFN, keyFN); err != nil {
+				ra.logger.Warn("Got the error from the server HTTPS listener err=", err)
+			}
+		} else {
+			ra.logger.Info("Serves HTTP connections")
+			if err := ra.srv.ListenAndServe(); err != nil {
+				ra.logger.Warn("Got the error from the server HTTP listener err=", err)
+			}
 		}
 	}()
 }
