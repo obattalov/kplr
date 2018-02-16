@@ -39,8 +39,8 @@ func main() {
 
 	mpl := mpool.NewPool()
 	transp := zebra.NewTransport(&zebra.TransportConfig{
-		ListenAddress:  cfg.ListenOn,
-		SessTimeoutSec: kplr.GetIntVal(cfg.SessionTimeoutSec, 0),
+		ListenAddress:  cfg.ZebraListenOn,
+		SessTimeoutSec: kplr.GetIntVal(cfg.ZebraSessionTimeoutSec, 0),
 	})
 	jctrlr := journal.NewJournalCtrlr()
 
@@ -71,10 +71,15 @@ func main() {
 // parseCLP parses Command Line Params and returns config
 func parseCLP() (*Config, error) {
 	var (
-		debug_api   = kingpin.Flag("debug-api", "Enable debug mode for ReST API calls.").Bool()
+		debug_api   = kingpin.Flag("api-debug", "Enable debug mode for ReST API calls.").Bool()
 		httpEndpnt  = kingpin.Flag("api-endpoint", "Http(s) API endpoint in form <ip:port>. Https is used if TLS key and cert files are provided").Default(defaultHttpAddr).String()
-		tlsKey      = kingpin.Flag("tls-key", "TLS private key file location").String()
-		tlsCert     = kingpin.Flag("tls-cert", "TLS certificate file location").String()
+		tlsKey      = kingpin.Flag("api-tls-key", "API HTTPS TLS private key file location").String()
+		tlsCert     = kingpin.Flag("api-tls-cert", "API HTTPS TLS certificate file location").String()
+		zebraAddr   = kingpin.Flag("zebra-endpoint", "Zebra server endpoint in form <ip:port>").Default(defaultZebraPort).String()
+		zebraKey    = kingpin.Flag("zebra-tls-key", "Zebra TLS private key file location").String()
+		zebraCert   = kingpin.Flag("zebra-tls-cert", "Zebra TLS certificate file location").String()
+		zebraCA     = kingpin.Flag("zebra-tls-ca", "Zebra TLS CA trust-store certificates chain file location").String()
+		zebra2WTls  = kingpin.Flag("zebra-tls-2way", "Whether to verify agent's (Zebra client) certificate").Bool()
 		maxJrnlSize = kingpin_addons.Size(kingpin.Flag("journal-max-size", "Specifies maximum journal size (100G, 50M etc.)").Default("1Tb"))
 		maxChnkSize = kingpin_addons.Size(kingpin.Flag("chunk-max-size", "Specifies maximum chunk size (100G, 50M etc.)").Default("50Mb"))
 		cfgFile     = kingpin.Flag("config-file", "The kplr configuration file name").Default(defaultConfigFile).String()
@@ -96,6 +101,11 @@ func parseCLP() (*Config, error) {
 		}
 	}
 
+	pCfg.ZebraListenOn = *zebraAddr
+	pCfg.ZebraKeyFN = *zebraKey
+	pCfg.ZebraCertFN = *zebraCert
+	pCfg.ZebraCaFN = *zebraCA
+	pCfg.Zebra2WayTls = *zebra2WTls
 	pCfg.HttpListenOn = *httpEndpnt
 	pCfg.HttpsCertFN = *tlsCert
 	pCfg.HttpsKeyFN = *tlsKey

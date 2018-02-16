@@ -11,9 +11,15 @@ import (
 
 type (
 	Config struct {
-		ListenOn          string
-		SessionTimeoutSec *int `json:"SessionTimeoutSec,omitempty"`
-		JournalsDir       string
+		JournalsDir string
+
+		// Zebra (logs feed) endpoint
+		ZebraListenOn          string
+		ZebraSessionTimeoutSec *int `json:"SessionTimeoutSec,omitempty"`
+		ZebraKeyFN             string
+		ZebraCertFN            string
+		ZebraCaFN              string
+		Zebra2WayTls           bool
 
 		HttpListenOn    string
 		HttpShtdwnToSec int
@@ -29,22 +35,22 @@ type (
 var configLog = log4g.GetLogger("kplr.Config")
 
 const (
-	defaultKeplerDir         = "/opt/kplr/"
-	defaultKplrJrnlsDir      = defaultKeplerDir + "journals/"
-	defaultConfigFile        = defaultKeplerDir + "config.json"
-	defaultLog4gCongigFile   = defaultKeplerDir + "log4g.properties"
-	defaultZebraPort         = "0.0.0.0:9966"
-	defaultSessTimeoutSec    = 30
-	defaultHttpAddr          = ":8080"
-	defaultHttpShutdownToSec = 5
-	defaultJrnChunkMaxSize   = int64(50000000)      // 50Mb
-	defaultJrnlMaxSize       = int64(1000000000000) // 1Tb
+	defaultKeplerDir           = "/opt/kplr/"
+	defaultKplrJrnlsDir        = defaultKeplerDir + "journals/"
+	defaultConfigFile          = defaultKeplerDir + "config.json"
+	defaultLog4gCongigFile     = defaultKeplerDir + "log4g.properties"
+	defaultZebraPort           = "0.0.0.0:9966"
+	defaultZebraSessTimeoutSec = 30
+	defaultHttpAddr            = ":8080"
+	defaultHttpShutdownToSec   = 5
+	defaultJrnChunkMaxSize     = int64(50000000)      // 50Mb
+	defaultJrnlMaxSize         = int64(1000000000000) // 1Tb
 )
 
 func newDefaultConfig() *Config {
 	cfg := &Config{}
-	cfg.ListenOn = defaultZebraPort
-	cfg.SessionTimeoutSec = kplr.GetIntPtr(defaultSessTimeoutSec)
+	cfg.ZebraListenOn = defaultZebraPort
+	cfg.ZebraSessionTimeoutSec = kplr.GetIntPtr(defaultZebraSessTimeoutSec)
 	cfg.JournalsDir = defaultKplrJrnlsDir
 	cfg.HttpListenOn = defaultHttpAddr
 	cfg.HttpShtdwnToSec = defaultHttpShutdownToSec
@@ -56,8 +62,12 @@ func newDefaultConfig() *Config {
 
 func (c *Config) String() string {
 	return fmt.Sprint(
-		"\n\tListenOn=", c.ListenOn,
-		"\n\tSessionTimeoutSec=", kplr.GetIntVal(c.SessionTimeoutSec, -1),
+		"\n\tZebraListenOn=", c.ZebraListenOn,
+		"\n\tZebraKeyFN=", c.ZebraKeyFN,
+		"\n\tZebraCertFN=", c.ZebraCertFN,
+		"\n\tZebraCaFN=", c.ZebraCaFN,
+		"\n\tZebra2WayTls=", c.Zebra2WayTls,
+		"\n\tZebraSessionTimeoutSec=", kplr.GetIntVal(c.ZebraSessionTimeoutSec, -1),
 		"\n\tJournalsDir=", c.JournalsDir,
 		"\n\tHttpListenOn=", c.HttpListenOn,
 		"\n\tHttpShtdwnToSec=", c.HttpShtdwnToSec,
@@ -105,11 +115,23 @@ func (c *Config) GetJournalMaxSize() int64 {
 
 // =============================== Config ====================================
 func (c *Config) Apply(c2 *Config) {
-	if c2.ListenOn != "" {
-		c.ListenOn = c2.ListenOn
+	if c2.ZebraListenOn != "" {
+		c.ZebraListenOn = c2.ZebraListenOn
 	}
-	if c2.SessionTimeoutSec != nil {
-		c.SessionTimeoutSec = c2.SessionTimeoutSec
+	if c2.ZebraKeyFN != "" {
+		c.ZebraKeyFN = c2.ZebraKeyFN
+	}
+	if c2.ZebraCertFN != "" {
+		c.ZebraCertFN = c2.ZebraCertFN
+	}
+	if c2.ZebraCaFN != "" {
+		c.ZebraCaFN = c2.ZebraCaFN
+	}
+	if c2.Zebra2WayTls {
+		c.Zebra2WayTls = c2.Zebra2WayTls
+	}
+	if c2.ZebraSessionTimeoutSec != nil {
+		c.ZebraSessionTimeoutSec = c2.ZebraSessionTimeoutSec
 	}
 	if c2.JournalsDir != "" {
 		c.JournalsDir = c2.JournalsDir
