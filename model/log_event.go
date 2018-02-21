@@ -6,83 +6,111 @@ import (
 
 type (
 	LogEvent struct {
+		tgid int64
 		ts   int64
-		src  WeakString
-		tags Tags
+		msg  WeakString
+		tgl  TagLine
 	}
 )
 
-func (le *LogEvent) Reset(ts uint64, src WeakString, tags Tags) {
-	le.ts = int64(ts)
-	le.src = src
-	le.tags = tags
+func (le *LogEvent) Init(ts int64, msg WeakString) {
+	le.ts = ts
+	le.msg = msg
 }
 
-func (le *LogEvent) Source() WeakString {
-	return le.src
+func (le *LogEvent) InitWithTagLine(ts int64, msg WeakString, tgl TagLine) {
+	le.ts = ts
+	le.msg = msg
+	le.tgl = tgl
 }
 
-func (le *LogEvent) Timestamp() uint64 {
-	return uint64(le.ts)
+func (le *LogEvent) GetTimestamp() int64 {
+	return le.ts
 }
 
-func (le *LogEvent) Tags() Tags {
-	return le.tags
+func (le *LogEvent) GetMessage() WeakString {
+	return le.msg
 }
 
-func (le *LogEvent) Tag(tag string) interface{} {
-	switch tag {
-	case TAG_SRC:
-		return le.src
-	case TAG_TS:
-		return le.ts
-	default:
-		return le.tags.GetTag(tag)
-	}
+func (le *LogEvent) GetTagLine() TagLine {
+	return le.tgl
+}
+
+func (le *LogEvent) GetTGroupId() int64 {
+	return le.tgid
 }
 
 // BufSize returns size of marshalled data
 func (le *LogEvent) BufSize() int {
-	return 16 + len(le.src) + len(le.tags)
+	if len(le.tgl) == 0 {
+		// tgid(8bts)+ ts(8bts) + msgLen(4 bts) + msg
+		return 20 + len(le.msg)
+	}
+	// tgid(8bts)+ ts(8bts) + msgLen(4 bts) + msg + tglLen(4 bts) + tgl
+	return 24 + len(le.msg) + len(le.tgl)
 }
 
 func (le *LogEvent) Marshal(buf []byte) (int, error) {
-	n, err := MarshalInt64(le.ts, buf)
+	n, err := MarshalInt64(int64(le.tgid), buf)
 	if err != nil {
 		return 0, err
 	}
 
-	n1, err := MarshalString(string(le.src), buf[n:])
+	n1, err := MarshalInt64(le.ts, buf[n:])
 	if err != nil {
 		return 0, err
 	}
-
 	n += n1
-	n1, err = MarshalString(string(le.tags), buf[n:])
+
+	n1, err = MarshalString(string(le.msg), buf[n:])
+	if err != nil {
+		return 0, err
+	}
+
+	if len(le.tgl) > 0 {
+		n += n1
+		n1, err = MarshalString(string(le.tgl), buf[n:])
+	} else {
+		buf[n] |= byte(128)
+	}
 
 	return n + n1, err
 }
 
-func (le *LogEvent) Unmarshal(buf []byte) (n int, err error) {
-	n, le.ts, err = UnmarshalInt64(buf)
+func (le *LogEvent) Unmarshal(buf []byte) (int, error) {
+	n, tgid, err := UnmarshalInt64(buf)
 	if err != nil {
 		return 0, err
 	}
+	le.tgid = tgid
 
 	var n1 int
-	n1, le.src, err = UnmarshalString(buf[n:])
+	n1, le.ts, err = UnmarshalInt64(buf[n:])
 	if err != nil {
-		return
+		return 0, err
+	}
+	n += n1
+
+	lb := buf[n]
+	buf[n] &= byte(127)
+
+	n1, le.msg, err = UnmarshalString(buf[n:])
+	if err != nil {
+		return 0, err
+	}
+	buf[n] = lb
+	n += n1
+
+	if lb&128 == 0 {
+		var s WeakString
+		n1, s, err = UnmarshalString(buf[n:])
+		le.tgl = TagLine(s)
+		n += n1
 	}
 
-	n += n1
-	var s WeakString
-	n1, s, err = UnmarshalString(buf[n:])
-	le.tags = Tags(s)
-
-	return n + n1, err
+	return n, err
 }
 
 func (le *LogEvent) String() string {
-	return fmt.Sprint("{ts:", uint64(le.ts), ", src:", le.src, "}")
+	return fmt.Sprint("{tGroupId:", le.tgid, ", ts:", uint64(le.ts), ", msg:", le.msg, ", tgl:", le.tgl, "}")
 }
