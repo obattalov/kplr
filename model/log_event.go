@@ -40,6 +40,11 @@ func (le *LogEvent) GetTGroupId() int64 {
 	return le.tgid
 }
 
+// for tests...
+func (le *LogEvent) SetTGroupId(id int64) {
+	le.tgid = id
+}
+
 // BufSize returns size of marshalled data
 func (le *LogEvent) BufSize() int {
 	if len(le.tgl) == 0 {

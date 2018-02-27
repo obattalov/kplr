@@ -1,11 +1,18 @@
 package model
 
+import (
+	"bytes"
+	"fmt"
+	"sort"
+	"strings"
+)
+
 type (
 	// TagLine contains a list of tags in a form |tag1=val1|tag2=val2|...| the tags
 	// are sorted alphabetically in ascending order
 	TagLine string
 
-	// Tags storage where the key is the tag name and it is holded by its value
+	// TagMap is immutable storage where the key is the tag name and it is holded by its value
 	TagMap map[string]string
 
 	// An immutable structure which holds a reference to the TagMap
@@ -15,3 +22,91 @@ type (
 		tm  TagMap
 	}
 )
+
+const (
+	cTagValueSeparator = "="
+	cTagSeparator      = "|"
+
+	TAG_TIMESTAMP = "ts"
+	TAG_MESSAGE   = "msg"
+)
+
+var (
+	EmptyTagMap = TagMap(map[string]string{})
+)
+
+func (tl *TagLine) NewTags(id int64) (Tags, error) {
+	if *tl == "" {
+		return Tags{gId: id, tl: *tl, tm: EmptyTagMap}, nil
+	}
+	vals := strings.Split(string(*tl), cTagSeparator)
+	m := make(TagMap, len(vals))
+	for _, v := range vals {
+		kv := strings.Split(v, cTagValueSeparator)
+		if len(kv) != 2 {
+			return Tags{}, fmt.Errorf("Wrong tag format: %s expecting in a form key=value", v)
+		}
+		m[kv[0]] = kv[1]
+	}
+
+	return Tags{gId: id, tl: m.BuildTagLine(), tm: m}, nil
+}
+
+func NewTagMap(m map[string]string) (TagMap, error) {
+	tm := make(TagMap, len(m))
+	for k, v := range m {
+		key := strings.ToLower(k)
+		if _, ok := tm[key]; ok {
+			return nil, fmt.Errorf("Incorrect tag initializing map, expecting keys to be case insensitive, but it is %v", m)
+		}
+		tm[key] = v
+	}
+	return tm, nil
+}
+
+func (tm *TagMap) NewTags(id int64) (Tags, error) {
+	return Tags{gId: id, tl: tm.BuildTagLine(), tm: *tm}, nil
+}
+
+// BuildTagLine builds the TagLine from the map of values
+func (tm *TagMap) BuildTagLine() TagLine {
+	srtKeys := make([]string, 0, len(*tm))
+	// sort keys
+	for k := range *tm {
+		idx := sort.SearchStrings(srtKeys, k)
+		srtKeys = append(srtKeys, k)
+		if idx < len(srtKeys)-1 {
+			copy(srtKeys[idx+1:], srtKeys[idx:])
+		}
+		srtKeys[idx] = k
+	}
+
+	var b bytes.Buffer
+	first := true
+	for _, k := range srtKeys {
+		if !first {
+			b.WriteString(cTagSeparator)
+		}
+		b.WriteString(k)
+		b.WriteString(cTagValueSeparator)
+		b.WriteString((*tm)[k])
+		first = false
+	}
+	return TagLine(b.String())
+}
+
+func (tags *Tags) GetId() int64 {
+	return tags.gId
+}
+
+func (tags *Tags) GetTagLine() TagLine {
+	return tags.tl
+}
+
+func (tags *Tags) GetValue(key string) string {
+	return tags.tm[key]
+}
+
+func (tags *Tags) String() string {
+	return fmt.Sprintf("{tid=%d, tl=%s}", tags.gId, tags.tl)
+}

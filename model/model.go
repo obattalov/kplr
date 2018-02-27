@@ -12,4 +12,8 @@ type (
 		Journal  string
 		RecordId journal.RecordId
 	}
+
+	// FilterF returns true, if the event must be filtered (disregarded), or false
+	// if it is not.
+	FilterF func(ev *LogEvent) bool
 )
