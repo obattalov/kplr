@@ -2,11 +2,8 @@ package journal
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
-	"io/ioutil"
-	"path"
 	"sync"
 	"time"
 
@@ -14,8 +11,7 @@ import (
 	"github.com/jrivets/log4g"
 	"github.com/kplr-io/journal"
 	"github.com/kplr-io/kplr"
-	"github.com/kplr-io/kplr/index"
-	"github.com/kplr-io/kplr/model"
+	"github.com/kplr-io/kplr/model/index"
 	"github.com/kplr-io/kplr/model/wire"
 	"github.com/kplr-io/kplr/mpool"
 )
@@ -25,6 +21,8 @@ type (
 		GetJournalDir() string
 		GetJournalChunkSize() int64
 		GetJournalMaxSize() int64
+		// GetJournalRecoveryOnIfError - Enables recovery if journal error happens
+		GetJournalRecoveryOnIfError() bool
 	}
 
 	Controller interface {
@@ -60,22 +58,19 @@ type (
 	}
 
 	controller struct {
-		MPool   mpool.Pool      `inject:"mPool"`
-		TTable  *index.TTable   `inject:"tTable"`
-		JCfg    JournalConfig   `inject:"journalConfig"`
-		MainCtx context.Context `inject:"mainCtx"`
+		MPool   mpool.Pool        `inject:"mPool"`
+		TIdxr   index.TagsIndexer `inject:"tIndexer"`
+		JCfg    JournalConfig     `inject:"journalConfig"`
+		MainCtx context.Context   `inject:"mainCtx"`
 
 		lock sync.Mutex
 
-		//journals map[string]*jrnl_wrap
 		journals *treemap.Map
 		logger   log4g.Logger
 		shtdwn   bool
 	}
 
 	jrnl_wrap struct {
-		wLock sync.Mutex
-
 		createdAt time.Time
 		jctrlr    *controller
 		lock      sync.Mutex
@@ -84,13 +79,6 @@ type (
 		dir       string
 		jrnl      *journal.Journal
 		logger    log4g.Logger
-		ctags     *chnk_tags
-	}
-
-	// jw_wrap_desc is used for persisiting jrnl_wrap state
-	jw_wrap_desc struct {
-		ChnksTags map[uint32]*chunk_desc
-		CreatedAt kplr.ISO8601Time
 	}
 )
 
@@ -136,13 +124,8 @@ func (jc *controller) DiInit() error {
 	}
 
 	go func() {
-		jc.logger.Debug("Awaiting journal ctags being initialized...")
-		tags := make(map[string]string)
-		for _, jw := range wrps {
-			jw.add_ctags(tags)
-		}
-		jc.TTable.Append(tags)
-		jc.logger.Debug("Done with ", len(wrps), " journal wrappers, ", len(tags), " tags were read")
+		cs := &chkSynchronizer{jc, log4g.GetLogger("kplr.journal.Controller.chkSynchronizer")}
+		cs.sync(wrps)
 	}()
 
 	go jc.sizeChecker()
@@ -195,7 +178,7 @@ func (jc *controller) GetJournalInfo(jid string) (*JournalInfo, error) {
 		return nil, kplr.ErrNotFound
 	}
 	jw := jwi.(*jrnl_wrap)
-	jrnl, err := jw.get_journal()
+	jrnl, err := jw.getJournal()
 	if err != nil {
 		return nil, err
 	}
@@ -206,7 +189,6 @@ func (jc *controller) GetJournalInfo(jid string) (*JournalInfo, error) {
 	ji.Chunks = len(jrnl.GetChunks())
 	ji.Size = jrnl.Size()
 	ji.Path = jw.dir
-	ji.Tags = jw.ctags.get_tags_as_slice()
 	return ji, nil
 }
 
@@ -222,23 +204,28 @@ func (jc *controller) GetReader(jid string) (journal.Reader, error) {
 }
 
 func (jc *controller) Write(wp wire.WritePacket) error {
-	jw, jrnl, err := jc.getJournal(wp.GetSourceId())
+	_, jrnl, err := jc.getJournal(wp.GetSourceId())
 	if err != nil {
 		return err
 	}
 
-	jw.wLock.Lock()
-	var chks [20]journal.RecordId
-	_, cCnt, err := jrnl.Write(wp.GetDataReader(), chks[:])
+	tgs, err := jc.TIdxr.UpsertTags(wp.GetTags())
 	if err != nil {
-		jw.wLock.Unlock()
+		return err
+	}
+	wp.ApplyTagGroupId(tgs.GetId())
+
+	_, recId, err := jrnl.WriteToChunk(wp.GetDataReader())
+	if err != nil {
 		return err
 	}
 
-	jw.on_write(wp.GetTags(), chks[:cCnt])
-	jw.wLock.Unlock()
+	var rb index.RecordsBatch
+	rb.TGroupId = tgs.GetId()
+	rb.LastRecord.Journal = wp.GetSourceId()
+	rb.LastRecord.RecordId = recId
 
-	jc.TTable.Upsert(wp)
+	jc.TIdxr.OnRecords(&rb)
 	return nil
 }
 
@@ -247,7 +234,7 @@ func (jc *controller) Truncate(jid string, maxSize int64) (*TruncateResult, erro
 		return nil, errors.New(fmt.Sprint("Expecting positive maxSize, but got maxSize=", maxSize))
 	}
 
-	jw, j, err := jc.getJournal(jid)
+	_, j, err := jc.getJournal(jid)
 	if err != nil {
 		return nil, err
 	}
@@ -257,7 +244,6 @@ func (jc *controller) Truncate(jid string, maxSize int64) (*TruncateResult, erro
 	for sz > maxSize {
 		if chkId := j.Truncate(); chkId > 0 {
 			tr.ChksRemoved++
-			jw.ctags.on_chnk_delete(chkId)
 		}
 		sz = j.Size()
 	}
@@ -272,12 +258,23 @@ func (jc *controller) Truncate(jid string, maxSize int64) (*TruncateResult, erro
 }
 
 func (jc *controller) getJournal(jid string) (*jrnl_wrap, *journal.Journal, error) {
-	jw, err := jc.getJournalWrapper(jid)
-	if err != nil {
-		return jw, nil, err
+	// will do 2 checks just because we could come here for already broken journal
+	// what could happen due to unsuccessful write
+	for i := 0; i < 2; i++ {
+		jw, err := jc.getJournalWrapper(jid)
+		if err != nil {
+			return jw, nil, err
+		}
+
+		jrnl, err := jw.getJournal()
+		if err != nil {
+			jc.onInitError(jw)
+			continue
+		}
+
+		return jw, jrnl, err
 	}
-	jrnl, err := jw.get_journal()
-	return jw, jrnl, err
+	return nil, nil, fmt.Errorf("Could not initialize wrapper and the journal for ", jid, " in 2 attempts. Giving up for now.")
 }
 
 func (jc *controller) getJournalWrapper(jid string) (*jrnl_wrap, error) {
@@ -291,8 +288,13 @@ func (jc *controller) getJournalWrapper(jid string) (*jrnl_wrap, error) {
 	var jw *jrnl_wrap
 	jiw, ok := jc.journals.Get(jid)
 	if !ok {
+		jw, err = jc.newJournal(jid)
 		if err == nil {
-			jw, err = jc.newJournal(jid)
+			go func() {
+				cs := &chkSynchronizer{jc, log4g.GetLogger("kplr.journal.Controller.chkSynchronizer").
+					WithId("{" + jid + "}").(log4g.Logger)}
+				cs.syncJrnlWrapper0(jw)
+			}()
 		}
 	} else {
 		jw = jiw.(*jrnl_wrap)
@@ -307,7 +309,7 @@ func (jc *controller) newJournal(jid string) (*jrnl_wrap, error) {
 		jc.logger.Error("Could not create dir err=", err)
 		return nil, err
 	}
-	jrnl := newJournal(jc, jdir, jid)
+	jrnl := newJournalWrapper(jc, jdir, jid)
 	jc.journals.Put(jid, jrnl)
 	return jrnl, nil
 }
@@ -357,7 +359,7 @@ func (jc *controller) sizeChecker() {
 }
 
 // ============================== jrnl_wrap ==================================
-func newJournal(jc *controller, dir, jid string) *jrnl_wrap {
+func newJournalWrapper(jc *controller, dir, jid string) *jrnl_wrap {
 	j := new(jrnl_wrap)
 	j.ready = make(chan bool)
 	j.dir = dir
@@ -371,6 +373,7 @@ func newJournal(jc *controller, dir, jid string) *jrnl_wrap {
 		jcfg := journal.NewDefaultJournalConfig(j.dir)
 		jcfg.Id = j.jid
 		jcfg.MaxChunkSize = jc.JCfg.GetJournalChunkSize()
+		jcfg.RecoveryOnIfError = jc.JCfg.GetJournalRecoveryOnIfError()
 		jrnl, err := journal.NewJournal(jcfg)
 		if err != nil {
 			j.logger.Error("newJournal(): Could not open journal, err=", err)
@@ -378,88 +381,19 @@ func newJournal(jc *controller, dir, jid string) *jrnl_wrap {
 			return
 		}
 
-		ctags := new_chnk_tags()
-		var ctime time.Time
-		dc, err := j.load_status()
-		nonConsistent := false
-		if err == nil {
-			ctags.on_chnks_load(dc.ChnksTags)
-			if !ctags.is_consistent(jrnl.GetChunks()) {
-				nonConsistent = true
-				j.logger.Warn("newJournal(): ctags is inconsisent, will re-build it.")
-			}
-			ctime = time.Time(dc.CreatedAt)
-		} else {
-			ctime = time.Unix(jrnl.GetFCCT(), 0)
-		}
-
-		if err != nil || nonConsistent {
-			err = j.build_tags(jrnl, ctags)
-			if err != nil {
-				j.logger.Error("newJournal(): Could not build ctags list, err=", err)
-				jc.onInitError(j)
-				return
-			}
-			nonConsistent = true
-		}
-
 		j.lock.Lock()
 		defer j.lock.Unlock()
 
-		j.createdAt = ctime
+		j.createdAt = time.Unix(jrnl.GetFCCT(), 0)
 		j.jrnl = jrnl
-		j.ctags = ctags
-		if nonConsistent {
-			j.save_status()
-		}
 		j.logger.Info("Initialized successfully.")
 	}()
 	return j
 }
 
-// build_tags walking over the journal to update the chnk_tags collection
-func (j *jrnl_wrap) build_tags(jrnl *journal.Journal, ctags *chnk_tags) error {
-	j.logger.Debug("build_tags(): building tags")
-	var buf [1024]byte
-	jr := journal.JReader{}
-	jrnl.InitReader(&jr)
-	it := NewIterator(&jr, buf[:])
-	var le model.LogEvent
-	var curTags string
-	var curRecId journal.RecordId
-	for !it.End() {
-		err := it.Get(&le)
-		if err != nil {
-			return err
-		}
-
-		recId := jr.GetCurrentRecordId()
-
-		tags := model.WeakString(le.Tags())
-		if string(tags) != curTags || recId.ChunkId != curRecId.ChunkId || recId.Offset > curRecId.Offset {
-			curRecId = recId
-			curTags = tags.String()
-			if ctags.on_chnk_tags(curTags, curRecId) {
-				j.logger.Debug("Adding new tags ", curTags, " for ", curRecId)
-			}
-		}
-		it.Next()
-	}
-	return nil
-}
-
-// on_write updates tags for the list of chunks
-func (j *jrnl_wrap) on_write(tags string, chks []journal.RecordId) {
-	for _, chk := range chks {
-		j.ctags.on_chnk_tags(tags, chk)
-	}
-}
-
 func (j *jrnl_wrap) shutdown() {
 	j.lock.Lock()
 	defer j.lock.Unlock()
-
-	j.save_status()
 
 	if j.jrnl == nil {
 		j.logger.Warn("Could not shutdown, journal was not initialized properly")
@@ -468,69 +402,18 @@ func (j *jrnl_wrap) shutdown() {
 	j.jrnl.Close()
 }
 
-func (j *jrnl_wrap) get_journal() (*journal.Journal, error) {
+// getJournal() returns kplr journal from the journal wrapper
+func (j *jrnl_wrap) getJournal() (*journal.Journal, error) {
 	<-j.ready
 	j.lock.Lock()
 	jrnl := j.jrnl
 	j.lock.Unlock()
 
 	if jrnl == nil {
-		j.logger.Warn("Write(): found the journal could not be properly initialized.")
+		j.logger.Warn("getJournal(): found the journal could not be properly initialized.")
 		return nil, errors.New("Could not open the journal")
 	}
-
-	return jrnl, nil
-}
-
-func (j *jrnl_wrap) add_ctags(m map[string]string) {
-	<-j.ready
-
-	j.lock.Lock()
-	if j.ctags == nil {
-		j.logger.Error("Could not initialiaze journal wrapper for ", j.dir, " ignoring to add tags jid=", j.jid)
-		j.lock.Unlock()
-		return
-	}
-	jt := j.ctags.get_tags(j.jid)
-	j.lock.Unlock()
-
-	for tags, srcId := range jt {
-		m[tags] = srcId
-	}
-}
-
-// save_status - saves status of the journal to the disk, see jw_wrap_desc struct
-func (j *jrnl_wrap) save_status() error {
-	var dc jw_wrap_desc
-	dc.ChnksTags = j.ctags.chnks
-	dc.CreatedAt = kplr.ISO8601Time(j.createdAt)
-
-	b, err := json.Marshal(&dc)
-	if err != nil {
-		return err
-	}
-
-	return ioutil.WriteFile(j.get_state_filename(), b, 0644)
-}
-
-// load_status - reads status of the journal from the disk and update the journal
-func (j *jrnl_wrap) load_status() (*jw_wrap_desc, error) {
-	b, err := ioutil.ReadFile(j.get_state_filename())
-	if err != nil {
-		return nil, err
-	}
-
-	var dc jw_wrap_desc
-	err = json.Unmarshal(b, &dc)
-	if err != nil {
-		return nil, err
-	}
-
-	return &dc, nil
-}
-
-func (j *jrnl_wrap) get_state_filename() string {
-	return path.Join(j.dir, cJrnlStatusFileName)
+	return jrnl, jrnl.GetError()
 }
 
 // ================================= misc ====================================

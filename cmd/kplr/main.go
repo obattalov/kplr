@@ -10,9 +10,9 @@ import (
 	"github.com/kplr-io/kplr"
 	"github.com/kplr-io/kplr/api"
 	"github.com/kplr-io/kplr/cursor"
-	"github.com/kplr-io/kplr/index"
 	"github.com/kplr-io/kplr/journal"
 	"github.com/kplr-io/kplr/kingpin_addons"
+	"github.com/kplr-io/kplr/model/index/tidx"
 	"github.com/kplr-io/kplr/mpool"
 	"github.com/kplr-io/kplr/zebra"
 	"gopkg.in/alecthomas/kingpin.v2"
@@ -46,7 +46,7 @@ func main() {
 
 	rapi := api.NewRestApi()
 	cprvdr := cursor.NewCursorProvider()
-	ttbl := index.NewTTable()
+	tIdxer := tidx.NewInMemTagIndex()
 
 	injector.RegisterOne(jctrlr, "")
 	injector.RegisterOne(transp, "")
@@ -55,9 +55,10 @@ func main() {
 	injector.RegisterOne(cfg, "restApiConfig")
 	injector.RegisterOne(cfg, "tableConfig")
 	injector.RegisterOne(cfg, "journalConfig")
+	injector.RegisterOne(cfg, "tiConfig")
 	injector.RegisterOne(rapi, "")
 	injector.RegisterOne(cprvdr, "")
-	injector.RegisterOne(ttbl, "tTable")
+	injector.RegisterOne(tIdxer, "tIndexer")
 	injector.Construct()
 
 	signalChan := make(chan os.Signal, 1)
@@ -85,6 +86,7 @@ func parseCLP() (*Config, error) {
 		cfgFile     = kingpin.Flag("config-file", "The kplr configuration file name").Default(defaultConfigFile).String()
 		logCfgFile  = kingpin.Flag("log-config", "The log4g configuration file name").Default(defaultLog4gCongigFile).String()
 		jrnlsDir    = kingpin.Flag("journals-dir", "The directory where journals will be stored").Default(defaultKplrJrnlsDir).String()
+		recoveryOn  = kingpin.Flag("data-recovery", "If a data chunks is found broken, the broken part can be cut.").Bool()
 		pCfg        = &Config{}
 	)
 	kingpin.Version("0.0.1")
@@ -113,6 +115,7 @@ func parseCLP() (*Config, error) {
 	pCfg.JrnlMaxSize = *maxJrnlSize
 	pCfg.JrnlChunkMaxSize = *maxChnkSize
 	pCfg.JournalsDir = *jrnlsDir
+	pCfg.JrnlRecoveryOn = *recoveryOn
 
 	if pCfg.JrnlMaxSize <= pCfg.JrnlChunkMaxSize {
 		kingpin.Fatalf("Misconfiguration. Journal max size %s must be greater than journal's chunk size, which is %s",

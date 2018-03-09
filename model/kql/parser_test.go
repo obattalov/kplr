@@ -24,7 +24,9 @@ func TestParse(t *testing.T) {
 	testOk(t, "select WHERE (NOT (a='1234' AND c=abc)) or not (x=123 or c = abc) limit 100")
 	testOk(t, "select WHERE a='1234' AND bbb>=adfadf234798* or xxx = yyy limit 100")
 	testOk(t, "select WHERE a='1234' AND bbb like 'adfadf234798*' or xxx = yyy limit 10")
-	testOk(t, "SELECT WHERE filename=\"system.log\" or filename=\"wifi.log\" OFFSET 0 LIMIT -1")
+	testOk(t, "SELECT FROM a, b, *c WHERE filename=\"system.log\" or filename=\"wifi.log\" OFFSET 0 LIMIT -1")
+	testOk(t, "SELECT FROM a, b, *c WHERE filename=\"system.log\" or filename=\"wifi.log\" OFFSET 0 LIMIT -1")
+	testOk(t, "SELECT FROM a, b, *c WHERE 'from'='this is tag value' or filename=\"wifi.log\" OFFSET 0 LIMIT -1")
 }
 
 func TestParams(t *testing.T) {
@@ -49,6 +51,23 @@ func TestPosition(t *testing.T) {
 	s = testOk(t, "Select format 'abc' where a = '123' position '"+posId+"' offset -10 limit 13")
 	if s.Position.PosId != posId {
 		t.Fatal("Something goes wrong ", s)
+	}
+}
+
+func TestUnquote(t *testing.T) {
+	testUnquote(t, "'aaa", "'aaa")
+	testUnquote(t, "'aaa\"", "'aaa\"")
+	testUnquote(t, "aaa'", "aaa'")
+	testUnquote(t, "\"aaa'", "\"aaa'")
+	testUnquote(t, "   'aaa'", "aaa")
+	testUnquote(t, "\"aaa\"   ", "aaa")
+	testUnquote(t, "   'aaa\"", "   'aaa\"")
+	testUnquote(t, " aaa   ", " aaa   ")
+}
+
+func testUnquote(t *testing.T, in, out string) {
+	if unquote(in) != out {
+		t.Fatal("unqoute(", in, ") != ", out)
 	}
 }
 

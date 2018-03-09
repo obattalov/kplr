@@ -24,7 +24,7 @@ func (jr *JReaderMock) Reset(idx int, ss []model.WeakString) {
 	for i, s := range ss {
 		jr.offs = append(jr.offs, nxt)
 		var le model.LogEvent
-		le.Reset(uint64(i), s, "")
+		le.Init(int64(i), s)
 		nxt += int64(le.BufSize()) + journal.DataRecMetaSize
 	}
 	jr.offs = append(jr.offs, nxt)
@@ -41,7 +41,7 @@ func (jr *JReaderMock) ReadForward(bbw *btsbuf.Writer) (journal.RecordId, error)
 	res := journal.RecordId{0, jr.offs[jr.idx]}
 	var le model.LogEvent
 	for jr.idx < len(jr.ss) {
-		le.Reset(uint64(jr.idx), jr.ss[jr.idx], "")
+		le.Init(int64(jr.idx), jr.ss[jr.idx])
 		bb, err := bbw.Allocate(le.BufSize(), false)
 		if err != nil {
 			if n == 0 {
@@ -71,7 +71,7 @@ func (jr *JReaderMock) ReadBack(bbw *btsbuf.Writer) (journal.RecordId, error) {
 	}
 	var le model.LogEvent
 	for jr.idx >= 0 {
-		le.Reset(uint64(jr.idx), jr.ss[jr.idx], "")
+		le.Init(int64(jr.idx), jr.ss[jr.idx])
 		bb, err := bbw.Allocate(le.BufSize(), false)
 		if err != nil {
 			if n == 0 {

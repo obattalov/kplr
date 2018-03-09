@@ -19,19 +19,15 @@ func NewWriter(encoder model.MessageEncoder) *Writer {
 	return w
 }
 
-// MakeBtsBuf writes a log context with header
-func (w *Writer) MakeBtsBuf(header model.SSlice, lines []string) ([]byte, error) {
+// MakeBtsBuf writes a log context. Encoder should control status of the packet
+func (w *Writer) MakeBtsBuf(source string, lines []string) ([]byte, error) {
 	w.bbw.Reset(w.bbw.Buf(), true)
-	bf, err := w.bbw.Allocate(header.Size(), true)
+	bf, err := w.bbw.Allocate(len(source), true)
 	if err != nil {
 		return nil, err
 	}
 
-	_, err = model.MarshalSSlice(header, bf)
-	if err != nil {
-		return nil, err
-	}
-
+	copy(bf, model.StringToByteArray(source))
 	for _, ln := range lines {
 		err = w.encoder.Encode(ln, &w.bbw)
 		if err != nil {

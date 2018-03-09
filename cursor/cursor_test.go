@@ -6,7 +6,6 @@ import (
 
 	"github.com/jrivets/log4g"
 	"github.com/kplr-io/journal"
-	"github.com/kplr-io/kplr/index"
 	kj "github.com/kplr-io/kplr/journal"
 	"github.com/kplr-io/kplr/model"
 	"github.com/kplr-io/kplr/model/wire"
@@ -45,20 +44,11 @@ func (jc *test_jcontroller) Truncate(jid string, maxSize int64) (*kj.TruncateRes
 	return nil, nil
 }
 
-func new_test_cur_provider(jrnls map[string][]string) *cur_provider {
-	cp := new(cur_provider)
+func new_test_cur_provider(jrnls map[string][]string) *curProvider {
+	cp := new(curProvider)
 	cp.JController = &test_jcontroller{jrnls}
 	cp.MPool = mpool.NewPool()
-	cp.TTable = index.NewTTable()
 	cp.logger = log4g.GetLogger("kplr.cursor.provider")
-	// add to journal source and the tag key=journal
-	mp := make(map[string]string)
-	for k := range jrnls {
-		m := map[model.WeakString]model.WeakString{"key": model.WeakString(k), model.TAG_SRC_ID: model.WeakString(k)}
-		tags := model.MapToTags([]model.WeakString{model.TAG_SRC_ID, "key"}, m)
-		mp[string(tags)] = k
-	}
-	cp.TTable.Append(mp)
 
 	return cp
 }

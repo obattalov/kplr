@@ -9,38 +9,28 @@ import (
 )
 
 func TestBtBufWritePacket(t *testing.T) {
-	var tags model.Tags
-	tags = tags.Add(model.TAG_SRC_ID, "bbb")
+	tags := model.TagLine("a=a|b=b")
 
-	bbw := makeBtsBuf(t, model.SSlice{model.TAG_SRC_ID, "bbb"}, []string{"1", "2"})
+	bbw := makeBtsBuf(t, "j1", tags, []string{"1", "2"})
 	var wp BtBufWritePacket
 	err := wp.Init(bbw.Buf())
 	if err != nil {
 		t.Fatal("could not init BtBufWritePacket, err=", err)
 	}
 
-	if !reflect.DeepEqual(wp.GetTagNames(), model.SSlice{model.TAG_SRC_ID}) {
-		t.Fatal("GetTagNames is not expected", wp.GetTagNames())
+	if !reflect.DeepEqual(wp.GetTags(), tags) {
+		t.Fatal("GetTagNames is not expected", wp.GetTags())
 	}
 
-	if wp.GetTags() != string(tags) {
-		t.Fatal("wp.GetTags() is not expected ", wp.GetTags(), ", but expected ones ", tags)
+	if wp.GetSourceId() != "j1" {
+		t.Fatal("Expecting source=j1, but ", wp.GetSourceId())
 	}
 
-	tm := wp.GetTagsMap()
-	if len(tm) != 1 || tm[model.TAG_SRC_ID] != "bbb" {
-		t.Fatal("Unexpected tags list", tm)
-	}
-
-	if string(wp.GetSourceId()) != "bbb" {
-		t.Fatal("Should be bbb, but ", string(wp.GetSourceId()))
-	}
-
-	if wp.GetDataReader().End() || !checkLogEvent(wp.GetDataReader().Get(), "1", string(tags)) {
+	if wp.GetDataReader().End() || !checkLogEvent(wp.GetDataReader().Get(), "1", tags) {
 		t.Fatal("Expected 1, but got ", string(wp.GetDataReader().Get()))
 	}
 	wp.GetDataReader().Next()
-	if wp.GetDataReader().End() || !checkLogEvent(wp.GetDataReader().Get(), "2", string(tags)) {
+	if wp.GetDataReader().End() || !checkLogEvent(wp.GetDataReader().Get(), "2", model.TagLine("")) {
 		t.Fatal("Expected 2, but got ", string(wp.GetDataReader().Get()))
 	}
 
@@ -57,75 +47,36 @@ func TestBtBufWritePacketWrongInit(t *testing.T) {
 		t.Fatal("could init BtBufWritePacket, but should be an error")
 	}
 
-	bbw := makeBtsBuf(t, model.SSlice{}, []string{})
+	bbw := makeBtsBuf(t, "j1", model.TagLine(""), []string{"a", "b"})
 	err = wp.Init(bbw.Buf())
 	if err == nil {
 		t.Fatal("could init BtBufWritePacket, but should be an error, the wrong header")
 	}
 
-	bbw = makeBtsBuf(t, model.SSlice{model.TAG_SRC_ID, "bbb", "ccc"}, []string{})
+	bbw = makeBtsBuf(t, "j1", model.TagLine("a=aaa"), []string{})
 	err = wp.Init(bbw.Buf())
 	if err == nil {
-		t.Fatal("could init BtBufWritePacket, but should be an error, the wrong header")
+		t.Fatal("could init BtBufWritePacket, but should be an error, the empty data")
 	}
 
-	bbw = makeBtsBuf(t, model.SSlice{"bbb", model.TAG_SRC_ID}, []string{})
+	bbw = makeBtsBuf(t, "", model.TagLine("asdfasd"), []string{"a", "b"})
 	err = wp.Init(bbw.Buf())
 	if err == nil {
-		t.Fatal("could init BtBufWritePacket, but should be an error, no ", model.TAG_SRC_ID, " as a key provided")
+		t.Fatal("could init BtBufWritePacket, but should be an error, no journal is here as a key provided")
 	}
 }
 
-func TestBtBufWritePacketIterator(t *testing.T) {
-	var tags model.Tags
-	tags = tags.Add(model.TAG_SRC_ID, "bbb")
-
-	lngStr := "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" +
-		"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" +
-		"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" +
-		"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" +
-		"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" +
-		"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" +
-		"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" +
-		"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" +
-		"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" +
-		"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" +
-		"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
-
-	var wp BtBufWritePacket
-	if len(lngStr) <= len(wp.defBuf) {
-		t.Fatal("Wrong the test condition")
-	}
-
-	bbw := makeBtsBuf(t, model.SSlice{model.TAG_SRC_ID, "bbb"}, []string{"1", lngStr})
-	err := wp.Init(bbw.Buf())
-	if err != nil {
-		t.Fatal("could not init BtBufWritePacket, err=", err)
-	}
-
-	if wp.GetDataReader().End() || !checkLogEvent(wp.GetDataReader().Get(), "1", string(tags)) {
-		t.Fatal("Expected 1, but got ", string(wp.GetDataReader().Get()))
-	}
-	wp.GetDataReader().Next()
-	if wp.GetDataReader().End() || !checkLogEvent(wp.GetDataReader().Get(), lngStr, string(tags)) {
-		t.Fatal("Expected ", lngStr, ", but got ", string(wp.GetDataReader().Get()))
-	}
-
-	wp.GetDataReader().Next()
-	if !wp.GetDataReader().End() {
-		t.Fatal("End must be reached")
-	}
-}
-
-func checkLogEvent(buf []byte, src, tags string) bool {
+func checkLogEvent(buf []byte, src string, tags model.TagLine) bool {
 	var le model.LogEvent
 	le.Unmarshal(buf)
-	return string(le.Source()) == src && string(le.Tags()) == tags
+	return string(le.GetMessage()) == src && le.GetTagLine() == tags
 }
 
-func makeBtsBuf(t *testing.T, header model.SSlice, lines []string) *btsbuf.Writer {
-	wr := NewWriter(&model.SimpleLogEventEncoder{})
-	bf, err := wr.MakeBtsBuf(header, lines)
+func makeBtsBuf(t *testing.T, src string, tl model.TagLine, lines []string) *btsbuf.Writer {
+	enc := &model.SimpleLogEventEncoder{}
+	enc.SetTags(tl)
+	wr := NewWriter(enc)
+	bf, err := wr.MakeBtsBuf(src, lines)
 	if err != nil {
 		t.Fatal("oops, could not initialize buffer writer")
 	}

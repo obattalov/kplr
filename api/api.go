@@ -21,9 +21,9 @@ import (
 	"github.com/kplr-io/container"
 	"github.com/kplr-io/kplr"
 	"github.com/kplr-io/kplr/cursor"
-	"github.com/kplr-io/kplr/index"
 	"github.com/kplr-io/kplr/journal"
-	"github.com/kplr-io/kplr/model/query"
+	"github.com/kplr-io/kplr/model/index"
+	"github.com/kplr-io/kplr/model/kql"
 	"github.com/teris-io/shortid"
 )
 
@@ -43,7 +43,7 @@ type (
 		logger         log4g.Logger
 		ge             *gin.Engine
 		srv            *http.Server
-		TTable         *index.TTable         `inject:"tTable"`
+		TIndx          index.TagsIndexer     `inject:"tIndexer"`
 		Config         RestApiConfig         `inject:"restApiConfig"`
 		CursorProvider cursor.CursorProvider `inject:""`
 		JrnlCtrlr      journal.Controller    `inject:""`
@@ -462,17 +462,18 @@ func (ra *RestApi) parseRequest(c *gin.Context, q url.Values, defPos string) (st
 	return qbuf.String(), nil
 }
 
-func (ra *RestApi) newCursorByQuery(kqlTxt string) (cursor.Cursor, *query.Query, error) {
-	qry, err := query.NewQuery(kqlTxt, ra.TTable.GetKnownTags())
+func (ra *RestApi) newCursorByQuery(kqlTxt string) (cursor.Cursor, *kql.Query, error) {
+	qry, err := kql.Compile(kqlTxt, ra.TIndx)
 	if err != nil {
 		return nil, nil, NewError(ERR_INVALID_PARAM, fmt.Sprint("Parsing error of automatically generated query='", kqlTxt, "', check the query syntax (escape params needed?), parser says: ", err))
 	}
 
-	jrnls, err := ra.TTable.GetSrcId(qry.GetSrcExpr(), MAX_CUR_SRCS)
-	if err != nil {
-		if err == index.ErrMaxExcceded {
-			return nil, nil, NewError(ERR_INVALID_PARAM, fmt.Sprint("Number of sources for the log query execution exceds maximum allowed value ", MAX_CUR_SRCS, ", please make your query more specific"))
-		}
+	jrnls := qry.Sources()
+	if len(jrnls) > MAX_CUR_SRCS {
+		return nil, nil, NewError(ERR_INVALID_PARAM, fmt.Sprint("Number of sources for the log query execution exceds maximum allowed value ", MAX_CUR_SRCS, ", please make your query more specific"))
+	}
+
+	if len(jrnls) == 0 {
 		return nil, nil, NewError(ERR_INVALID_PARAM, fmt.Sprint("Could not define sources for the query=", kqlTxt, ", the error=", err))
 	}
 
@@ -504,8 +505,8 @@ func (ra *RestApi) newCursorByQuery(kqlTxt string) (cursor.Cursor, *query.Query,
 	return cur, qry, nil
 }
 
-func (ra *RestApi) applyQueryToCursor(kqlTxt string, cur cursor.Cursor) (*query.Query, error) {
-	qry, err := query.NewQuery(kqlTxt, ra.TTable.GetKnownTags())
+func (ra *RestApi) applyQueryToCursor(kqlTxt string, cur cursor.Cursor) (*kql.Query, error) {
+	qry, err := kql.Compile(kqlTxt, ra.TIndx)
 	if err != nil {
 		return nil, NewError(ERR_INVALID_PARAM, fmt.Sprint("Parsing error of automatically generated query='", kqlTxt, "', check the query syntax (escape params needed?), parser says: ", err))
 	}

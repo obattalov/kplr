@@ -39,6 +39,10 @@ type (
 	// td param is for READ ONLY and MUST NOT be modified by the visitor
 	TagsIndexerVisitor func(td *TagsDesc) bool
 
+	TagsIndexerConfig interface {
+		GetJournalDir() string
+	}
+
 	TagsIndexer interface {
 		// UpsertTags creates new record, or returns already exisiting one for
 		// the tag-line provided

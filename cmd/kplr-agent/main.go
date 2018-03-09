@@ -260,13 +260,8 @@ func saveStatFile(cfg *config, gsr *geyser.Collector, ing *ingestor) {
 		totalPerc += perc
 
 		if tags, ok := knwnTags[wkr.Filename]; ok {
-			ta := tags.([]string)
-
-			fmt.Fprintf(tw, "\tknwnTags:\t")
-			for i := 0; i < len(ta); i += 2 {
-				fmt.Fprintf(tw, "%s=%s, ", ta[i], ta[i+1])
-			}
-			fmt.Fprintf(tw, "\n")
+			hdrs := tags.(*hdrsCacheRec)
+			fmt.Fprintf(tw, "\tknwnTags: \n\tsrcId=%s, tags=%s\n", hdrs.srcId, hdrs.tags)
 		} else {
 			fmt.Fprintf(tw, "\tknwnTags:\t<data is not sent yet, or no new data for 5 mins>\n")
 		}

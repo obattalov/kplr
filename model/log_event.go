@@ -9,7 +9,7 @@ type (
 		tgid int64
 		ts   int64
 		msg  WeakString
-		tgl  TagLine
+		tgl  WeakString
 	}
 )
 
@@ -21,7 +21,7 @@ func (le *LogEvent) Init(ts int64, msg WeakString) {
 func (le *LogEvent) InitWithTagLine(ts int64, msg WeakString, tgl TagLine) {
 	le.ts = ts
 	le.msg = msg
-	le.tgl = tgl
+	le.tgl = WeakString(tgl)
 }
 
 func (le *LogEvent) GetTimestamp() int64 {
@@ -33,14 +33,13 @@ func (le *LogEvent) GetMessage() WeakString {
 }
 
 func (le *LogEvent) GetTagLine() TagLine {
-	return le.tgl
+	return TagLine(le.tgl.String())
 }
 
 func (le *LogEvent) GetTGroupId() int64 {
 	return le.tgid
 }
 
-// for tests...
 func (le *LogEvent) SetTGroupId(id int64) {
 	le.tgid = id
 }
@@ -53,6 +52,12 @@ func (le *LogEvent) BufSize() int {
 	}
 	// tgid(8bts)+ ts(8bts) + msgLen(4 bts) + msg + tglLen(4 bts) + tgl
 	return 24 + len(le.msg) + len(le.tgl)
+}
+
+// MarshalTagGroupIdOnly marshals tagId from the le to provided buffer supposing
+// that the buf is marshalled event
+func (le *LogEvent) MarshalTagGroupIdOnly(buf []byte) (int, error) {
+	return MarshalInt64(int64(le.tgid), buf)
 }
 
 func (le *LogEvent) Marshal(buf []byte) (int, error) {
@@ -107,9 +112,7 @@ func (le *LogEvent) Unmarshal(buf []byte) (int, error) {
 	n += n1
 
 	if lb&128 == 0 {
-		var s WeakString
-		n1, s, err = UnmarshalString(buf[n:])
-		le.tgl = TagLine(s)
+		n1, le.tgl, err = UnmarshalString(buf[n:])
 		n += n1
 	}
 

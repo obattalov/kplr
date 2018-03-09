@@ -6,8 +6,8 @@ import (
 	"time"
 
 	"github.com/jrivets/log4g"
-	"github.com/kplr-io/kplr/index"
 	"github.com/kplr-io/kplr/journal"
+	"github.com/kplr-io/kplr/model/index"
 	"github.com/kplr-io/kplr/model/wire"
 	"github.com/kplr-io/kplr/mpool"
 	"github.com/kplr-io/zebra"
@@ -21,7 +21,7 @@ type (
 
 	Transport struct {
 		MemPool   mpool.Pool         `inject:"mPool"`
-		Table     *index.TTable      `inject:"tTable"`
+		Table     index.TagsIndexer  `inject:"tIndexer"`
 		JrnlCtrlr journal.Controller `inject:""`
 
 		logger  log4g.Logger

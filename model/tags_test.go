@@ -38,3 +38,30 @@ func TestTMNewTagMap(t *testing.T) {
 		t.Fatal("Expecting ok, but err=", err, " tags=", tags)
 	}
 }
+
+func TestMarshalUnmarshalTags(t *testing.T) {
+	tl := TagLine("k=value|k1=value2")
+	tags, err := tl.NewTags(123)
+	if err != nil {
+		t.Fatal("could not create tags err=", err)
+	}
+
+	if len(tags.tm) != 2 {
+		t.Fatal("unexpected tags=", tags)
+	}
+
+	res, err := tags.MarshalJSON()
+	if err != nil {
+		t.Fatal("could not marshal err=", err)
+	}
+
+	var tags2 Tags
+	err = tags2.UnmarshalJSON(res)
+	if err != nil {
+		t.Fatal("could not unmarshal err=", err)
+	}
+
+	if !reflect.DeepEqual(tags, tags2) {
+		t.Fatal("Expected ", tags, ", but got ", tags2)
+	}
+}

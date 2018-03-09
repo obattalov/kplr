@@ -1,6 +1,7 @@
 package kql
 
 import (
+	"reflect"
 	"testing"
 
 	"github.com/kplr-io/journal"
@@ -130,5 +131,51 @@ func TestQueryIgnore(t *testing.T) {
 	le.SetTGroupId(ids[1])
 	if !q.Filter(&le) {
 		t.Fatal("The record should be filtered ", le)
+	}
+
+	le.SetTGroupId(0)
+	if !q.Filter(&le) {
+		t.Fatal("The record should be filtered ", le)
+	}
+}
+
+func TestFilterJournals(t *testing.T) {
+	testFilterJournals(t, []string{}, []string{"a", "b"}, []string{"a", "b"})
+	testFilterJournals(t, []string{"", ""}, []string{"a", "b"}, []string{})
+	testFilterJournals(t, []string{"*"}, []string{"a", "b"}, []string{"a", "b"})
+	testFilterJournals(t, []string{"c", "*"}, []string{"a", "b"}, []string{"a", "b"})
+	testFilterJournals(t, []string{"c", "'*'"}, []string{"a", "b"}, []string{"a", "b"})
+	testFilterJournals(t, []string{"c", "\"a\"", " b"}, []string{"a", "b"}, []string{"a", "b"})
+	testFilterJournals(t, []string{"c", "a"}, []string{"a", "b"}, []string{"a"})
+	testFilterJournals(t, []string{"c", "\"a?\""}, []string{"aa", "ba", "ac"}, []string{"aa", "ac"})
+	testFilterJournals(t, []string{"c", "\"*a\""}, []string{"aa", "ba", "ac", "a"}, []string{"aa", "a", "ba"})
+	testFilterJournals(t, []string{"c", "\"*a\""}, []string{"aa", "bb", "c", "ac"}, []string{"c", "aa"})
+}
+
+func TestParseFrom(t *testing.T) {
+	testParseFrom(t, "select From a, b, '*c?' limit 10", []string{"a", "b", "*c?"})
+	testParseFrom(t, "select From a, \"b\", '*c?' limit 10", []string{"a", "b", "*c?"})
+	testParseFrom(t, "select From ' a ', \"b\", '*c?' limit 10", []string{" a ", "b", "*c?"})
+	testParseFrom(t, "select limit 10", []string{})
+	testParseFrom(t, "select from * limit 10", []string{"*"})
+	testParseFrom(t, "select from '*' limit 10", []string{"*"})
+}
+
+func testParseFrom(t *testing.T, str string, exp []string) {
+	s, _ := Parse(str)
+	res := buildFromList(s.From)
+	if !reflect.DeepEqual(exp, res) {
+		t.Fatal("Expecting ", exp, ", but actual are ", res, " for str=", str)
+	}
+}
+
+func testFilterJournals(t *testing.T, ptrn, jrnls, expJrnls []string) {
+	res, err := filterJournals(jrnls, ptrn)
+	if err != nil {
+		t.Fatal("Unexpected err=", err)
+	}
+
+	if !reflect.DeepEqual(res, expJrnls) {
+		t.Fatal("Expected ", expJrnls, ", but really ", res, " for ptrn=", ptrn, " and input list ", jrnls)
 	}
 }

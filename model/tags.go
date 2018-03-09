@@ -2,6 +2,7 @@ package model
 
 import (
 	"bytes"
+	"encoding/json"
 	"fmt"
 	"sort"
 	"strings"
@@ -21,6 +22,11 @@ type (
 		tl  TagLine
 		tm  TagMap
 	}
+
+	tagsJson struct {
+		GID     int64   `json:"gid"`
+		TagLine TagLine `json:"tagLine"`
+	}
 )
 
 const (
@@ -39,17 +45,25 @@ func (tl *TagLine) NewTags(id int64) (Tags, error) {
 	if *tl == "" {
 		return Tags{gId: id, tl: *tl, tm: EmptyTagMap}, nil
 	}
+	m, err := tl.newTagMap()
+	if err != nil {
+		return Tags{}, err
+	}
+
+	return Tags{gId: id, tl: m.BuildTagLine(), tm: m}, nil
+}
+
+func (tl *TagLine) newTagMap() (TagMap, error) {
 	vals := strings.Split(string(*tl), cTagSeparator)
 	m := make(TagMap, len(vals))
 	for _, v := range vals {
 		kv := strings.Split(v, cTagValueSeparator)
 		if len(kv) != 2 {
-			return Tags{}, fmt.Errorf("Wrong tag format: %s expecting in a form key=value", v)
+			return m, fmt.Errorf("Wrong tag format: %s expecting in a form key=value", v)
 		}
 		m[kv[0]] = kv[1]
 	}
-
-	return Tags{gId: id, tl: m.BuildTagLine(), tm: m}, nil
+	return m, nil
 }
 
 func NewTagMap(m map[string]string) (TagMap, error) {
@@ -105,6 +119,22 @@ func (tags *Tags) GetTagLine() TagLine {
 
 func (tags *Tags) GetValue(key string) string {
 	return tags.tm[key]
+}
+
+func (tags *Tags) MarshalJSON() ([]byte, error) {
+	return json.Marshal(&tagsJson{tags.gId, tags.tl})
+}
+
+func (tags *Tags) UnmarshalJSON(data []byte) error {
+	var res tagsJson
+	err := json.Unmarshal(data, &res)
+	if err != nil {
+		return err
+	}
+	tags.gId = res.GID
+	tags.tl = TagLine(res.TagLine)
+	tags.tm, err = tags.tl.newTagMap()
+	return err
 }
 
 func (tags *Tags) String() string {

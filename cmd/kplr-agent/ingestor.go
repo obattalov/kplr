@@ -50,7 +50,16 @@ type (
 		// hdrsCache allows to cache headers by file name
 		hdrsCache *container.Lru
 	}
+
+	hdrsCacheRec struct {
+		srcId string
+		tags  model.TagLine
+	}
 )
+
+func (hcr *hdrsCacheRec) String() string {
+	return fmt.Sprint("{srcId=", hcr.srcId, ", tags=", hcr.tags, "}")
+}
 
 //=== ingestor
 
@@ -117,6 +126,8 @@ func (i *ingestor) ingest(ev *geyser.Event) error {
 		return err
 	}
 
+	i.logger.Trace("Ingest header=", header, ", ev.File=", ev.File, ", len(ev.Records)=", len(ev.Records))
+
 	buf, err := i.pktEncoder.encode(header, ev)
 	if err != nil {
 		i.zClient = nil
@@ -132,14 +143,14 @@ func (i *ingestor) ingest(ev *geyser.Event) error {
 
 // getHeaderByFilename get filename and forms header using schema and configuration
 // it can cache already calculated headers, so will work quickly this case
-func (i *ingestor) getHeaderByFilename(filename string) (model.SSlice, error) {
+func (i *ingestor) getHeaderByFilename(filename string) (*hdrsCacheRec, error) {
 	i.lock.Lock()
 	defer i.lock.Unlock()
 
 	val := i.hdrsCache.Get(filename)
 	if val != nil {
-		hdr := val.Val().([]string)
-		return model.StrSliceToSSlice(hdr), nil
+		hdr := val.Val().(*hdrsCacheRec)
+		return hdr, nil
 	}
 
 	schm := i.getSchema(filename)
@@ -148,19 +159,21 @@ func (i *ingestor) getHeaderByFilename(filename string) (model.SSlice, error) {
 	}
 
 	vars := schm.getVars(filename)
-	tags := make([]string, 0, len(schm.cfg.Tags))
+	tags := make(map[string]string, len(schm.cfg.Tags))
 
 	for k, v := range schm.cfg.Tags {
-		tags = append(tags, k)
-		tags = append(tags, schm.subsVars(v, vars))
+		tags[k] = schm.subsVars(v, vars)
 	}
 
 	srcId := schm.subsVars(schm.cfg.SourceId, vars)
-	header := []string{model.TAG_SRC_ID, srcId}
-	header = append(header, tags...)
+	tm, err := model.NewTagMap(tags)
+	if err != nil {
+		return nil, err
+	}
+	hdr := &hdrsCacheRec{srcId, tm.BuildTagLine()}
 
-	i.hdrsCache.Put(filename, header, 1)
-	return model.StrSliceToSSlice(header), nil
+	i.hdrsCache.Put(filename, hdr, 1)
+	return hdr, nil
 }
 
 func (i *ingestor) getKnownTags() map[interface{}]interface{} {

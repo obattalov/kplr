@@ -2,7 +2,11 @@
 package tidx
 
 import (
+	"encoding/json"
 	"fmt"
+	"io/ioutil"
+	"os"
+	"path"
 	"sync"
 
 	"github.com/jrivets/log4g"
@@ -12,13 +16,18 @@ import (
 )
 
 type (
-
 	// inMemTagIndex struct contains in-memory TagIndexer implementation
 	inMemTagIndex struct {
-		lock   sync.Mutex
-		logger log4g.Logger
-		tlines map[model.TagLine]int64
-		ttable map[int64]*index.TagsDesc
+		TIConfig index.TagsIndexerConfig `inject:"tiConfig"`
+		lock     sync.Mutex
+		logger   log4g.Logger
+		tlines   map[model.TagLine]int64
+		ttable   map[int64]*index.TagsDesc
+	}
+
+	stateDO struct {
+		TLines map[model.TagLine]int64   `json:"tagLines"`
+		TTable map[int64]*index.TagsDesc `json:"tagTable"`
 	}
 )
 
@@ -28,6 +37,22 @@ func NewInMemTagIndex() index.TagsIndexer {
 	mti.tlines = make(map[model.TagLine]int64)
 	mti.ttable = make(map[int64]*index.TagsDesc)
 	return mti
+}
+
+func (mti *inMemTagIndex) DiPhase() int {
+	return 0
+}
+
+func (mti *inMemTagIndex) DiInit() error {
+	mti.logger.Info("Initializing.")
+	return mti.loadState()
+}
+
+func (mti *inMemTagIndex) DiShutdown() {
+	err := mti.saveState()
+	if err != nil {
+		mti.logger.Error("Could not write tags table. err=", err)
+	}
 }
 
 func (mti *inMemTagIndex) UpsertTags(tl model.TagLine) (*model.Tags, error) {
@@ -136,4 +161,52 @@ func (mti *inMemTagIndex) Visit(visitor index.TagsIndexerVisitor) {
 			return
 		}
 	}
+}
+
+func (mti *inMemTagIndex) getStateFile() string {
+	return path.Join(mti.TIConfig.GetJournalDir(), "tidx.state")
+}
+
+func (mti *inMemTagIndex) loadState() error {
+	fn := mti.getStateFile()
+	if _, err := os.Stat(fn); os.IsNotExist(err) {
+		mti.logger.Warn("Could not find state file ", fn, ", will use empty tables")
+		return nil
+	}
+
+	data, err := ioutil.ReadFile(fn)
+	if err != nil {
+		mti.logger.Error("Could not read file ", fn, ", err=", err)
+		return err
+	}
+
+	sdo := &stateDO{}
+	err = json.Unmarshal(data, sdo)
+	if err != nil {
+		mti.logger.Error("Could not unmarshal data from ", fn, ", err=", err)
+		return err
+	}
+
+	mti.tlines = sdo.TLines
+	mti.ttable = sdo.TTable
+
+	mti.logger.Info("Read data from ", fn, ", with ", len(mti.tlines), " tags lines and ", len(mti.ttable), " lines in tags table.")
+
+	return nil
+}
+
+func (mti *inMemTagIndex) saveState() error {
+	fn := mti.getStateFile()
+	mti.logger.Info("Saving data to ", fn)
+
+	sdo := &stateDO{TLines: mti.tlines, TTable: mti.ttable}
+	data, err := json.Marshal(sdo)
+	if err != nil {
+		return err
+	}
+
+	if err = ioutil.WriteFile(fn, data, 0640); err != nil {
+		return fmt.Errorf("cannot write state file=%s; cause: %v", fn, err)
+	}
+	return nil
 }

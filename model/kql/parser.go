@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"strconv"
+	"strings"
 
 	"github.com/alecthomas/participle"
 	"github.com/alecthomas/participle/lexer"
@@ -11,7 +12,7 @@ import (
 
 var (
 	kqlLexer = lexer.Unquote(lexer.Upper(lexer.Must(lexer.Regexp(`(\s+)`+
-		`|(?P<Keyword>(?i)SELECT|FORMAT|WHERE|POSITION|LIMIT|OFFSET|AND|OR|LIKE|CONTAINS|PREFIX|SUFFIX|NOT)`+
+		`|(?P<Keyword>(?i)SELECT|FORMAT|FROM|WHERE|POSITION|LIMIT|OFFSET|AND|OR|LIKE|CONTAINS|PREFIX|SUFFIX|NOT)`+
 		`|(?P<Ident>[a-zA-Z0-9-_@#$%?&*{}]+)`+
 		`|(?P<String>'[^']*'|"[^"]*")`+
 		`|(?P<Operator><>|!=|<=|>=|[-+*/%,.=<>()])`,
@@ -33,10 +34,19 @@ type (
 	Select struct {
 		Tail     bool        `"SELECT" `
 		Format   string      `["FORMAT" @String]`
+		From     *JrnlList   `["FROM" @@]`
 		Where    *Expression `["WHERE" @@]`
 		Position *Position   `["POSITION" @@]`
 		Offset   *int64      `["OFFSET" @Ident]`
 		Limit    int64       `"LIMIT" @Ident`
+	}
+
+	JrnlList struct {
+		JrnlNames []*JrnlName ` @@ {"," @@}`
+	}
+
+	JrnlName struct {
+		Name string `(@String|@Ident)`
 	}
 
 	Expression struct {
@@ -54,7 +64,7 @@ type (
 	}
 
 	Condition struct {
-		Operand string `  @Ident`
+		Operand string `  (@String|@Ident)`
 		Op      string ` (@("<"|">"|">="|"<="|"!="|"="|"CONTAINS"|"PREFIX"|"SUFFIX"|"LIKE"))`
 		Value   string ` (@Ident|@String)`
 	}
@@ -63,6 +73,21 @@ type (
 		PosId string `(@"TAIL"|@"HEAD"|@String|@Ident)`
 	}
 )
+
+// unquote receives a string and removes either single or double quotes if the
+// input has them:
+// unquote(" 'aaa'  ") => "aaa"
+// unquote(" 'aaa\"  ") => " 'aaa\"  "
+// unquote(" 'aaa'") => "aaa"
+func unquote(s string) string {
+	s1 := strings.Trim(s, " ")
+	if len(s1) >= 2 {
+		if c := s1[len(s1)-1]; s1[0] == c && (c == '"' || c == '\'') {
+			return s1[1 : len(s1)-1]
+		}
+	}
+	return s
+}
 
 func (i *Int) Capture(values []string) error {
 	v, err := strconv.ParseInt(values[0], 10, 64)

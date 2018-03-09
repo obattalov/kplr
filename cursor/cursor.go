@@ -3,10 +3,11 @@ package cursor
 import (
 	"context"
 	"errors"
+	"fmt"
 	"io"
+	"time"
 
 	"github.com/jrivets/log4g"
-	"github.com/kplr-io/kplr/index"
 	"github.com/kplr-io/kplr/journal"
 	"github.com/kplr-io/kplr/model"
 	"github.com/kplr-io/kplr/model/evstrm"
@@ -19,10 +20,13 @@ type (
 
 		Id() string
 
-		// GetReader returns cursor read which reads up to limit record.
-		// The exact param specifies whether if the reader meets end of cursor
-		// with moving forward, should it wait for new records to reach limit
-		// lines or returns immegiately.
+		// GetReader returns cursor read which reads up to limit number of records.
+		// The exact param specifies the reader behavior when it reaches end of
+		// the data, before it has read limit. If exact == true, then the reader
+		// will block read process in case of it reaches EOF, but still has not
+		// read limit lines. So it will try to reach limit by waiting new data
+		// if it reaches EOF. If the exact==false, the reader will return EOF or
+		// limit lines, which happens fist.
 		//
 		// limit < 0 means unlimited read
 		GetReader(limit int64, exact bool) io.ReadCloser
@@ -48,8 +52,7 @@ type (
 		NewCursor(curId string, srcs []string) (Cursor, error)
 	}
 
-	cur_provider struct {
-		TTable      *index.TTable      `inject:"tTable"`
+	curProvider struct {
 		JController journal.Controller `inject:""`
 		MPool       mpool.Pool         `inject:"mPool"`
 		logger      log4g.Logger
@@ -61,6 +64,9 @@ type (
 		it     evstrm.Iterator
 		logger log4g.Logger
 		id     string
+
+		// fmtResult is used by the cursor to format every resulted line
+		fmtResult func(le *model.LogEvent) string
 	}
 )
 
@@ -73,7 +79,7 @@ var (
 )
 
 func NewCursorProvider() CursorProvider {
-	cp := new(cur_provider)
+	cp := new(curProvider)
 	cp.logger = log4g.GetLogger("kplr.cursor.provider")
 	return cp
 }
@@ -82,14 +88,14 @@ func NewCursorProvider() CursorProvider {
 
 // NewCursor creates new Cursor (cur instance). It expects list of sources - journal
 // ids, where it will read data from.
-func (cp *cur_provider) NewCursor(curId string, srcs []string) (Cursor, error) {
+func (cp *curProvider) NewCursor(curId string, srcs []string) (Cursor, error) {
 	cp.logger.Debug("NewCursor with id=", curId, " for ", srcs)
 	if len(srcs) == 0 {
 		return nil, errors.New("To create the cursor at least one of journal (data source) name should be specified")
 	}
 
 	var it evstrm.Iterator
-	its := make(map[string]*journal.Iterator)
+	its := make(map[string]*journal.Iterator, len(srcs))
 
 	if len(srcs) == 1 {
 		rd, err := cp.JController.GetReader(srcs[0])
@@ -139,6 +145,13 @@ func (cp *cur_provider) NewCursor(curId string, srcs []string) (Cursor, error) {
 	c.it = it
 	c.its = its
 	c.id = curId
+	c.fmtResult = c.fmtPureMessage
+
+	// TODO: support formatter later
+	if len(its) > 1 {
+		c.fmtResult = c.fmtJrnlNameAndMessage
+	}
+
 	c.logger = log4g.GetLogger("kplr.cursor").WithId("{" + c.id + "}").(log4g.Logger)
 	return c, nil
 }
@@ -215,7 +228,7 @@ func (c *cur) getCurIteratorPosition() journal.IteratorPosition {
 }
 
 // meetPos is used to find a proper point in mix of iterators when direction
-// is changed. The method is needed in case of mixer is involved. This case
+// is changed. The method is needed in case of a mixer is involved. This case
 // when direction is changed the cursor will not return the record it returned
 // before the changing the direction. It is caused by using function to making
 // the choice of the next record (mixer specific)
@@ -264,7 +277,7 @@ func (c *cur) Offset(count int64) {
 }
 
 func (c *cur) GetReader(limit int64, exact bool) io.ReadCloser {
-	return new_cur_reader(c, limit, exact)
+	return newCurReader(c, limit, exact)
 }
 
 // Close closes the cursor. All attempts to work with the cursor after it is closed
@@ -276,7 +289,7 @@ func (c *cur) Close() error {
 	return err
 }
 
-// ============================== recs_reader ================================
+// =============================== recsReader ================================
 
 // nextRecord reads current log event, format it, if it was read successfully and
 // iterate to next event. Returns the formatted string and an error if any
@@ -290,12 +303,10 @@ func (c *cur) nextRecord() (string, error) {
 	if err != nil {
 		return "", err
 	}
+	res := c.fmtResult(&le)
 	c.it.Next()
 
-	// the reader strategy is not to ask for a new buffer until the previous
-	// one is completely read. It means iterators are not going to be touched
-	// until the buffer is done. We hope it is safe not copy source here, but cast
-	return string(le.Source()), nil
+	return res, nil
 }
 
 // waitRecords blocks the current go routine until whether new data appears or the ctx
@@ -316,4 +327,16 @@ func (c *cur) onReaderClosed() {
 	for _, it := range c.its {
 		it.JReader.Close()
 	}
+}
+
+func (c *cur) fmtPureMessage(le *model.LogEvent) string {
+	// the reader strategy is not to ask for a new buffer until the previous
+	// one is completely read. It means iterators are not going to be touched
+	// until the buffer is done. We hope it is safe not copy source here, but cast
+	return string(le.GetMessage())
+}
+
+func (c *cur) fmtJrnlNameAndMessage(le *model.LogEvent) string {
+	ip := c.it.GetIteratorPos().(journal.IteratorPosition)
+	return fmt.Sprint(time.Unix(0, le.GetTimestamp()), " [", ip.Id, "]: ", string(le.GetMessage()))
 }

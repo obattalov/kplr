@@ -38,7 +38,7 @@ func (ti *test_it) Get(le *model.LogEvent) error {
 			ti.idx = 0
 		}
 	}
-	le.Reset(uint64(ti.idx), ti.ss[ti.idx], model.Tags(ti.ss[ti.idx]))
+	le.Init(int64(ti.idx), ti.ss[ti.idx])
 	return nil
 }
 

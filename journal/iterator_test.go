@@ -26,7 +26,7 @@ func TestForward(t *testing.T) {
 		if err != nil {
 			t.Fatal("should be fine to read, but got err=", err)
 		}
-		if int(le.Timestamp()) != n || le.Source() != jr.ss[n] {
+		if int(le.GetTimestamp()) != n || le.GetMessage() != jr.ss[n] {
 			t.Fatal("Expecting record ", n, " but read ", &le)
 		}
 		it.Next()
@@ -89,7 +89,7 @@ func TestPositioning(t *testing.T) {
 		if err != nil {
 			t.Fatal("oops err=", err)
 		}
-		if le.Source() != jr.ss[idx] || it.GetCurrentPos().Offset != jr.offs[idx] {
+		if le.GetMessage() != jr.ss[idx] || it.GetCurrentPos().Offset != jr.offs[idx] {
 			t.Fatal("Expected offset=", jr.offs[idx], ", and val=", jr.ss[idx], ", but ", &le, ", pos=", it.GetCurrentPos())
 		}
 		it.Next()
@@ -100,7 +100,7 @@ func TestPositioning(t *testing.T) {
 			t.Fatal("oops err=", err)
 		}
 
-		if le.Source() != jr.ss[idx] || it.GetCurrentPos().Offset != jr.offs[idx] {
+		if le.GetMessage() != jr.ss[idx] || it.GetCurrentPos().Offset != jr.offs[idx] {
 			t.Fatal("Expected offset=", jr.offs[idx], ", and val=", jr.ss[idx], ", but ", &le, ", pos=", it.GetCurrentPos())
 		}
 	}
@@ -122,7 +122,7 @@ func TestBackward(t *testing.T) {
 		if err != nil {
 			t.Fatal("should be fine to read, but got err=", err)
 		}
-		if int(le.Timestamp()) != 2-n || le.Source() != jr.ss[2-n] {
+		if int(le.GetTimestamp()) != 2-n || le.GetMessage() != jr.ss[2-n] {
 			t.Fatal("Expecting record ", n, " but read ", &le)
 		}
 		it.Next()
@@ -186,12 +186,12 @@ func TestForwardFilter(t *testing.T) {
 	it := NewIterator(&jr, buf[:])
 	// skip all, but contains `b`
 	it.FltF = func(ev *model.LogEvent) bool {
-		return !strings.Contains(string(ev.Source()), "b")
+		return !strings.Contains(string(ev.GetMessage()), "b")
 	}
 
 	var le model.LogEvent
 	it.Get(&le)
-	if le.Timestamp() != 1 || le.Source() != "bb" {
+	if le.GetTimestamp() != 1 || le.GetMessage() != "bb" {
 		t.Fatal("expecting bb, but got ", &le)
 	}
 	it.Next()
@@ -221,7 +221,7 @@ func TestBackwardFilter(t *testing.T) {
 	var le model.LogEvent
 	for !it.End() {
 		if it.Get(&le) == nil {
-			res = append(res, le.Source().String())
+			res = append(res, le.GetMessage().String())
 		}
 		pos = append(pos, it.GetCurrentPos().Offset)
 		it.Next()
@@ -264,7 +264,7 @@ func TestSkipRecords(t *testing.T) {
 	t.Log(jr, it.err)
 	var le model.LogEvent
 	err = it.Get(&le)
-	if le.Source() != jr.ss[2] || err != nil {
+	if le.GetMessage() != jr.ss[2] || err != nil {
 		t.Fatal("Expected ", jr.ss[2], ", but got ", le, " err=", err)
 	}
 	it.next()
@@ -277,7 +277,7 @@ func TestSkipRecords(t *testing.T) {
 
 	it.Backward(false)
 	err = it.Get(&le)
-	if le.Source() != jr.ss[0] || err != nil {
+	if le.GetMessage() != jr.ss[0] || err != nil {
 		t.Fatal("Expected ", jr.ss[0], ", but got ", le, " err=", err)
 	}
 }
@@ -299,8 +299,8 @@ func TestWalkForthAndBack(t *testing.T) {
 		}
 
 		idx := jr.getIdxByOffset(it.GetCurrentPos().Offset)
-		if jr.ss[idx] != le.Source() {
-			t.Fatal("idx=", idx, " ", it.GetCurrentPos(), " expected ", jr.ss[idx], ", but ", le.Source())
+		if jr.ss[idx] != le.GetMessage() {
+			t.Fatal("idx=", idx, " ", it.GetCurrentPos(), " expected ", jr.ss[idx], ", but ", le.GetMessage())
 		}
 		it.Next()
 	}
@@ -314,7 +314,7 @@ func TestFilters(t *testing.T) {
 	var buf [60]byte
 	it := NewIterator(&jr, buf[:])
 	it.FltF = func(ev *model.LogEvent) bool {
-		return ev.Timestamp()&1 != 0
+		return ev.GetTimestamp()&1 != 0
 	}
 	m := make(map[int]int)
 	for i := 0; i < 1000; i++ {
@@ -328,8 +328,8 @@ func TestFilters(t *testing.T) {
 
 		idx := jr.getIdxByOffset(it.GetCurrentPos().Offset)
 		m[idx] = idx
-		if jr.ss[idx] != le.Source() {
-			t.Fatal("idx=", idx, " ", it.GetCurrentPos(), " expected ", jr.ss[idx], ", but ", le.Source())
+		if jr.ss[idx] != le.GetMessage() {
+			t.Fatal("idx=", idx, " ", it.GetCurrentPos(), " expected ", jr.ss[idx], ", but ", le.GetMessage())
 		}
 		it.Next()
 	}

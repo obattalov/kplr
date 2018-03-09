@@ -35,7 +35,7 @@ type (
 		// curent position. Updated only when Get() is invoked
 		pos journal.RecordId
 
-		// The current LogEvent. The context is unsafe, so
+		// The current LogEvent. The context is unsafe
 		le    model.LogEvent
 		valid bool
 		err   error

@@ -29,6 +29,7 @@ type (
 
 		JrnlChunkMaxSize int64
 		JrnlMaxSize      int64
+		JrnlRecoveryOn   bool
 	}
 )
 
@@ -76,6 +77,7 @@ func (c *Config) String() string {
 		"\n\tHttpsCertFN=", c.HttpsCertFN,
 		"\n\tJrnlChunkMaxSize=", kplr.FormatSize(c.JrnlChunkMaxSize),
 		"\n\tJrnlMaxSize=", kplr.FormatSize(c.JrnlMaxSize),
+		"\n\tJrnlRecoveryOn=", c.JrnlRecoveryOn,
 	)
 }
 
@@ -113,6 +115,10 @@ func (c *Config) GetJournalMaxSize() int64 {
 	return c.JrnlMaxSize
 }
 
+func (c *Config) GetJournalRecoveryOnIfError() bool {
+	return c.JrnlRecoveryOn
+}
+
 // =============================== Config ====================================
 func (c *Config) Apply(c2 *Config) {
 	if c2.ZebraListenOn != "" {
@@ -141,6 +147,9 @@ func (c *Config) Apply(c2 *Config) {
 	}
 	if c2.JrnlChunkMaxSize > 0 {
 		c.JrnlChunkMaxSize = c2.JrnlChunkMaxSize
+	}
+	if c2.JrnlRecoveryOn {
+		c.JrnlRecoveryOn = c2.JrnlRecoveryOn
 	}
 	if c2.HttpDebugMode {
 		c.HttpDebugMode = c2.HttpDebugMode

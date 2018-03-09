@@ -1,6 +1,10 @@
 package kql
 
 import (
+	"path/filepath"
+	"strings"
+
+	"github.com/kplr-io/kplr"
 	"github.com/kplr-io/kplr/model"
 	"github.com/kplr-io/kplr/model/index"
 )
@@ -15,6 +19,7 @@ type (
 	}
 
 	Query struct {
+		QSel    *Select
 		idxer   index.TagsIndexer
 		tgCache map[int64]*tagGroupDesc
 
@@ -43,6 +48,7 @@ func Compile(kQuery string, idxer index.TagsIndexer) (*Query, error) {
 	}
 
 	qry := new(Query)
+	qry.QSel = s
 	qry.idxer = idxer
 	qry.tgCache = make(map[int64]*tagGroupDesc)
 	qry.tgChkFunc, err = evaluate(s.Where, &qry.tgChkValuator, cExpValMsgIgnore|cExpValTsIgnore)
@@ -55,8 +61,9 @@ func Compile(kQuery string, idxer index.TagsIndexer) (*Query, error) {
 		return nil, err
 	}
 
+	var jrnls []string
 	if qry.tgChkFunc.typ == cFTIgnore {
-		qry.jrnls = idxer.GetAllJournals()
+		jrnls = idxer.GetAllJournals()
 	} else {
 		m := make(map[string]bool)
 		idxer.Visit(func(td *index.TagsDesc) bool {
@@ -71,16 +78,42 @@ func Compile(kQuery string, idxer index.TagsIndexer) (*Query, error) {
 			return true
 		})
 
-		qry.jrnls = make([]string, 0, len(m))
+		jrnls = make([]string, 0, len(m))
 		for j := range m {
-			qry.jrnls = append(qry.jrnls, j)
+			jrnls = append(qry.jrnls, j)
 		}
 	}
 
-	return qry, nil
+	qry.jrnls, err = filterJournals(jrnls, buildFromList(s.From))
+	return qry, err
 }
 
-// Filter returns true if the event le must be filtered
+func (q *Query) Limit() int64 {
+	return int64(q.QSel.Limit)
+}
+
+func (q *Query) Offset() int64 {
+	return kplr.GetInt64Val(q.QSel.Offset, 0)
+}
+
+func (q *Query) Sources() []string {
+	return q.jrnls
+}
+
+// Position returns position provided, or head, if the position was skipped in
+// the original query
+func (q *Query) Position() string {
+	if q.QSel.Position == nil {
+		return "head"
+	}
+	return q.QSel.Position.PosId
+}
+
+func (q *Query) GetFilterF() model.FilterF {
+	return q.Filter
+}
+
+// Filter returns true if the log event le must be filtered
 func (q *Query) Filter(le *model.LogEvent) bool {
 	gid := le.GetTGroupId()
 	tgd, ok := q.tgCache[gid]
@@ -95,7 +128,7 @@ func (q *Query) Filter(le *model.LogEvent) bool {
 
 	if tgd != nil {
 		if q.tgChkFunc.typ != cFTIgnore && !tgd.chkRes {
-			// must be filtered
+			// must be filtered cause the sub-expression depends on tags, which is false
 			return true
 		}
 		q.recChkValuator.tags = tgd.tags
@@ -121,4 +154,60 @@ func (qv *queryExpValuator) tagVal(tag string) string {
 		return ""
 	}
 	return qv.tags.GetValue(tag)
+}
+
+// filterJournals returns list of journals filtered by the fltExpr.
+//
+// NOTE!!! The function will change initial jrnls array.
+func filterJournals(jrnls, exprs []string) ([]string, error) {
+	if len(exprs) == 0 || (len(exprs) == 1 && exprs[0] == "") {
+		return jrnls, nil
+	}
+
+	res := make([]string, 0, len(jrnls))
+
+	// patterns
+	for _, expr := range exprs {
+		if len(jrnls) == 0 {
+			break
+		}
+
+		ptrn := unquote(expr)
+		ptrn = strings.Trim(ptrn, " ")
+
+		for i := 0; i < len(jrnls); {
+			j := jrnls[i]
+			if ptrn != "*" {
+				m, err := filepath.Match(ptrn, j)
+				if err != nil {
+					return res, err
+				}
+				if !m {
+					i++
+					continue
+				}
+			}
+
+			res = append(res, j)
+			jrnls[i] = jrnls[len(jrnls)-1]
+			jrnls = jrnls[:len(jrnls)-1]
+		}
+	}
+
+	return res, nil
+}
+
+func buildFromList(jl *JrnlList) []string {
+	if jl == nil || len(jl.JrnlNames) == 0 {
+		return []string{}
+	}
+
+	res := make([]string, 0, len(jl.JrnlNames))
+	for _, jn := range jl.JrnlNames {
+		if jn != nil {
+			res = append(res, jn.Name)
+		}
+	}
+
+	return res
 }
