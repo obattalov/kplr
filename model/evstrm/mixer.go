@@ -29,7 +29,7 @@ func GetFirst(ev1, ev2 *model.LogEvent) bool {
 
 // GetEarliest returns whether ev1 has lowest timestamp rather than ev2
 func GetEarliest(ev1, ev2 *model.LogEvent) bool {
-	return ev1.Timestamp() <= ev2.Timestamp()
+	return ev1.GetTimestamp() <= ev2.GetTimestamp()
 }
 
 func (m *Mixer) Reset(sel SelectF, i1, i2 Iterator) {

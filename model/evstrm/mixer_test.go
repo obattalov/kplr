@@ -73,7 +73,7 @@ func iterate(m Mixer) ([]model.WeakString, []IteratorPos) {
 	var ev model.LogEvent
 	for !m.End() {
 		m.Get(&ev)
-		res = append(res, ev.Source())
+		res = append(res, ev.GetMessage())
 		pos = append(pos, m.GetIteratorPos())
 		m.Next()
 	}
@@ -81,5 +81,5 @@ func iterate(m Mixer) ([]model.WeakString, []IteratorPos) {
 }
 
 func cmpSources(ev1, ev2 *model.LogEvent) bool {
-	return strings.Compare(string(ev1.Source()), string(ev2.Source())) <= 0
+	return strings.Compare(string(ev1.GetMessage()), string(ev2.GetMessage())) <= 0
 }

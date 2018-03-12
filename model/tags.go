@@ -2,163 +2,141 @@ package model
 
 import (
 	"bytes"
+	"encoding/json"
+	"fmt"
+	"sort"
 	"strings"
 )
 
-const (
-	TAG_TS     = "ts"
-	TAG_SRC    = "src"
-	TAG_SRC_ID = "__source_id__"
-)
-
 type (
-	// Tags is a string in which contains values in format
-	// <tagName>=<tagValue>|[<tagName>=<tagValue>|]*
-	// tag names must be lower case.
-	Tags WeakString
+	// TagLine contains a list of tags in a form |tag1=val1|tag2=val2|...| the tags
+	// are sorted alphabetically in ascending order
+	TagLine string
+
+	// TagMap is immutable storage where the key is the tag name and it is holded by its value
+	TagMap map[string]string
+
+	// An immutable structure which holds a reference to the TagMap
+	Tags struct {
+		gId int64
+		tl  TagLine
+		tm  TagMap
+	}
+
+	tagsJson struct {
+		GID     int64   `json:"gid"`
+		TagLine TagLine `json:"tagLine"`
+	}
 )
 
 const (
-	cTagValueSeparator = '='
-	cTagSeparator      = '|'
+	cTagValueSeparator = "="
+	cTagSeparator      = "|"
+
+	TAG_TIMESTAMP = "ts"
+	TAG_MESSAGE   = "msg"
 )
 
-func (t Tags) ContainsAll(tgs Tags) bool {
-	i := 0
-	var str WeakString
-	for i > -1 {
-		str, i = tgs.nextTag(i)
-		idx := strings.Index(string(t), string(str))
-		if idx == -1 {
-			return false
-		}
+var (
+	EmptyTagMap = TagMap(map[string]string{})
+)
 
-		if !strings.Contains(string(t), string(str)) {
-			return false
-		}
+func (tl *TagLine) NewTags(id int64) (Tags, error) {
+	if *tl == "" {
+		return Tags{gId: id, tl: *tl, tm: EmptyTagMap}, nil
 	}
-	return true
+	m, err := tl.newTagMap()
+	if err != nil {
+		return Tags{}, err
+	}
+
+	return Tags{gId: id, tl: m.BuildTagLine(), tm: m}, nil
 }
 
-func (t Tags) GetTagNames() []WeakString {
-	ws := make([]WeakString, 0, 10)
-	s := string(t)
-	for {
-		idx := 0
-		for idx < len(s) && s[idx] != cTagSeparator {
-			idx++
+func (tl *TagLine) newTagMap() (TagMap, error) {
+	vals := strings.Split(string(*tl), cTagSeparator)
+	m := make(TagMap, len(vals))
+	for _, v := range vals {
+		kv := strings.Split(v, cTagValueSeparator)
+		if len(kv) != 2 {
+			return m, fmt.Errorf("Wrong tag format: %s expecting in a form key=value", v)
 		}
-
-		idx++
-		if idx >= len(s) {
-			break
-		}
-
-		s = s[idx:]
-		idx = 0
-		for idx < len(s) && s[idx] != cTagValueSeparator {
-			idx++
-		}
-		if idx >= len(s) {
-			break
-		}
-		ws = append(ws, WeakString(s[:idx]))
+		m[kv[0]] = kv[1]
 	}
-	return ws
+	return m, nil
 }
 
-func (t Tags) nextTag(i int) (WeakString, int) {
-	tag := string(t)
-	if i >= len(tag) {
-		return "", -1
-	}
-
-	if tag[i] != cTagSeparator {
-		return "", -1
-	}
-
-	for i2 := i + 1; i2 < len(tag); i2++ {
-		if tag[i2] == cTagSeparator {
-			if i2+1 == len(tag) {
-				return WeakString(tag[i : i2+1]), -1
-			}
-			return WeakString(tag[i : i2+1]), i2
+func NewTagMap(m map[string]string) (TagMap, error) {
+	tm := make(TagMap, len(m))
+	for k, v := range m {
+		key := strings.ToLower(k)
+		if _, ok := tm[key]; ok {
+			return nil, fmt.Errorf("Incorrect tag initializing map, expecting keys to be case insensitive, but it is %v", m)
 		}
+		tm[key] = v
 	}
-	return WeakString(tag[i:]), -1
+	return tm, nil
 }
 
-func (t Tags) GetTag(key string) string {
-	var b bytes.Buffer
-	b.WriteByte(cTagSeparator)
-	b.WriteString(key)
-	b.WriteByte(cTagValueSeparator)
-	kv := ByteArrayToString(b.Bytes())
+func (tm *TagMap) NewTags(id int64) (Tags, error) {
+	return Tags{gId: id, tl: tm.BuildTagLine(), tm: *tm}, nil
+}
 
-	tags := string(t)
-	i := strings.Index(tags, string(kv))
-	if i == -1 {
-		return ""
-	}
-
-	st := i + len(kv)
-	for i2 := st; i2 < len(tags); i2++ {
-		if tags[i2] == cTagSeparator {
-			return tags[st:i2]
+// BuildTagLine builds the TagLine from the map of values
+func (tm *TagMap) BuildTagLine() TagLine {
+	srtKeys := make([]string, 0, len(*tm))
+	// sort keys
+	for k := range *tm {
+		idx := sort.SearchStrings(srtKeys, k)
+		srtKeys = append(srtKeys, k)
+		if idx < len(srtKeys)-1 {
+			copy(srtKeys[idx+1:], srtKeys[idx:])
 		}
-	}
-	return tags[st:]
-}
-
-// Adds t2 to t and returns concatenation
-func (t Tags) Add(k, v string) Tags {
-	var b bytes.Buffer
-	b.WriteString(string(t))
-	if b.Len() == 0 {
-		b.WriteByte(cTagSeparator)
-	}
-	b.WriteString(strings.ToLower(k))
-	b.WriteByte(cTagValueSeparator)
-	b.WriteString(v)
-	b.WriteByte(cTagSeparator)
-	return Tags(b.String())
-}
-
-func IsTsTag(tg string) bool {
-	return TAG_TS == tg
-}
-
-func TagSubst(tag, val string) Tags {
-	var b bytes.Buffer
-	b.WriteByte(cTagSeparator)
-	b.WriteString(strings.ToLower(tag))
-	b.WriteByte(cTagValueSeparator)
-	b.WriteString(val)
-	b.WriteByte(cTagSeparator)
-	return Tags(b.String())
-}
-
-// MapToTags turns the map m to Tags string using key order kOrder
-func MapToTags(kOrder SSlice, m map[WeakString]WeakString) Tags {
-	if len(kOrder) == 0 {
-		return Tags("")
+		srtKeys[idx] = k
 	}
 
 	var b bytes.Buffer
-	for _, key := range kOrder {
-		v, ok := m[key]
-		if !ok {
-			continue
+	first := true
+	for _, k := range srtKeys {
+		if !first {
+			b.WriteString(cTagSeparator)
 		}
-
-		if b.Len() == 0 {
-			b.WriteByte(cTagSeparator)
-		}
-		b.WriteString(string(key))
-		b.WriteByte(cTagValueSeparator)
-		b.WriteString(string(v))
-		b.WriteByte(cTagSeparator)
+		b.WriteString(k)
+		b.WriteString(cTagValueSeparator)
+		b.WriteString((*tm)[k])
+		first = false
 	}
+	return TagLine(b.String())
+}
 
-	return Tags(b.String())
+func (tags *Tags) GetId() int64 {
+	return tags.gId
+}
+
+func (tags *Tags) GetTagLine() TagLine {
+	return tags.tl
+}
+
+func (tags *Tags) GetValue(key string) string {
+	return tags.tm[key]
+}
+
+func (tags *Tags) MarshalJSON() ([]byte, error) {
+	return json.Marshal(&tagsJson{tags.gId, tags.tl})
+}
+
+func (tags *Tags) UnmarshalJSON(data []byte) error {
+	var res tagsJson
+	err := json.Unmarshal(data, &res)
+	if err != nil {
+		return err
+	}
+	tags.gId = res.GID
+	tags.tl = TagLine(res.TagLine)
+	tags.tm, err = tags.tl.newTagMap()
+	return err
+}
+
+func (tags *Tags) String() string {
+	return fmt.Sprintf("{tid=%d, tl=%s}", tags.gId, tags.tl)
 }

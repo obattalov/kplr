@@ -39,14 +39,14 @@ func (rr *rr_test) waitRecords(ctx context.Context) {
 }
 
 func Test_cur_reader_general(t *testing.T) {
-	r := new_cur_reader(new_rr_test([]string{}), 10, false)
+	r := newCurReader(new_rr_test([]string{}), 10, false)
 	buf := []byte{0, 0, 0}
 	n, err := r.Read(buf)
 	if n != 0 || err != io.EOF {
 		t.Fatal("Must be empty")
 	}
 
-	r = new_cur_reader(new_rr_test([]string{"a"}), 10, false)
+	r = newCurReader(new_rr_test([]string{"a"}), 10, false)
 	n, err = r.Read(buf)
 	if n != 1 || err != nil {
 		t.Fatal("Must not be empty")
@@ -58,7 +58,7 @@ func Test_cur_reader_general(t *testing.T) {
 		t.Fatal("Expecting 'a', but got ", s)
 	}
 
-	r = new_cur_reader(new_rr_test([]string{"ab"}), 10, false)
+	r = newCurReader(new_rr_test([]string{"ab"}), 10, false)
 	n, err = r.Read(buf)
 	s = model.ByteArrayToString(buf[:n])
 	if n != 2 || err != nil || s != "ab" {
@@ -66,7 +66,7 @@ func Test_cur_reader_general(t *testing.T) {
 	}
 
 	rrt := new_rr_test([]string{"ab", "cde"})
-	r = new_cur_reader(rrt, 10, false)
+	r = newCurReader(rrt, 10, false)
 	n, err = r.Read(buf)
 	s = model.ByteArrayToString(buf[:n])
 	if n != 3 || err != nil || s != "abc" || rrt.closed {
@@ -87,7 +87,7 @@ func Test_cur_reader_general(t *testing.T) {
 
 func Test_cur_reader_limit(t *testing.T) {
 	// limit == 0
-	r := new_cur_reader(new_rr_test([]string{"ab", "cd"}), 0, false)
+	r := newCurReader(new_rr_test([]string{"ab", "cd"}), 0, false)
 	buf := make([]byte, 100)
 	n, err := r.Read(buf)
 	if n != 0 || err != io.EOF {
@@ -96,7 +96,7 @@ func Test_cur_reader_limit(t *testing.T) {
 
 	// limit == 1
 	rrt := new_rr_test([]string{"ab", "cd"})
-	r = new_cur_reader(rrt, 1, false)
+	r = newCurReader(rrt, 1, false)
 	n, err = r.Read(buf)
 	s := model.ByteArrayToString(buf[:n])
 	if n != 2 || err != nil || s != "ab" {
@@ -109,7 +109,7 @@ func Test_cur_reader_limit(t *testing.T) {
 	}
 
 	// limit == 2
-	r = new_cur_reader(new_rr_test([]string{"ab", "cd"}), 2, false)
+	r = newCurReader(new_rr_test([]string{"ab", "cd"}), 2, false)
 	n, err = r.Read(buf[:2])
 	s = model.ByteArrayToString(buf[:n])
 	if n != 2 || err != nil || s != "ab" {
@@ -130,7 +130,7 @@ func Test_cur_reader_limit(t *testing.T) {
 
 	// unlim
 	rrt = new_rr_test([]string{"ab", "cd", "ef"})
-	r = new_cur_reader(rrt, -1, false)
+	r = newCurReader(rrt, -1, false)
 	n, err = r.Read(buf)
 	s = model.ByteArrayToString(buf[:n])
 	if n != 6 || err != nil || s != "abcdef" || rrt.closed {
@@ -140,7 +140,7 @@ func Test_cur_reader_limit(t *testing.T) {
 
 func Test_cur_reader_exact(t *testing.T) {
 	// limit == 2 even
-	r := new_cur_reader(new_rr_test([]string{"ab", "cd"}), 2, true)
+	r := newCurReader(new_rr_test([]string{"ab", "cd"}), 2, true)
 	buf := make([]byte, 100)
 	n, err := r.Read(buf)
 	s := model.ByteArrayToString(buf[:n])
@@ -153,7 +153,7 @@ func Test_cur_reader_exact(t *testing.T) {
 	}
 
 	// blocking
-	r = new_cur_reader(new_rr_test([]string{"ab", "cd", "ef"}), -1, true)
+	r = newCurReader(new_rr_test([]string{"ab", "cd", "ef"}), -1, true)
 	n, err = r.Read(buf)
 	s = model.ByteArrayToString(buf[:n])
 	if n != 6 || err != nil || s != "abcdef" {

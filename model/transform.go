@@ -4,6 +4,7 @@ import (
 	"encoding/binary"
 	"errors"
 	"fmt"
+	"reflect"
 	"unsafe"
 )
 
@@ -149,7 +150,12 @@ func MarshalString(v string, buf []byte) (int, error) {
 }
 
 func StringToByteArray(v string) []byte {
-	return *(*[]byte)(unsafe.Pointer(&v))
+	var slcHdr reflect.SliceHeader
+	sh := *(*reflect.StringHeader)(unsafe.Pointer(&v))
+	slcHdr.Data = sh.Data
+	slcHdr.Cap = sh.Len
+	slcHdr.Len = sh.Len
+	return *(*[]byte)(unsafe.Pointer(&slcHdr))
 }
 
 func ByteArrayToString(buf []byte) WeakString {
@@ -170,6 +176,18 @@ func UnmarshalString(buf []byte) (int, WeakString, error) {
 	bs := buf[4 : ln+4]
 	res := *(*string)(unsafe.Pointer(&bs))
 	return ln + 4, WeakString(res), nil
+}
+
+func MarshalStringBuf(v string, buf []byte) (int, error) {
+	if len(v) > len(buf) {
+		return 0, fmt.Errorf("Could not MarshalStringBuf() - not enough space. Required %d bytes, but the buffer sized is %d", len(v), len(buf))
+	}
+	ba := StringToByteArray(v)
+	return copy(buf, ba), nil
+}
+
+func UnmarshalStringBuf(buf []byte) WeakString {
+	return ByteArrayToString(buf)
 }
 
 func noBufErr(src string, ln, req int) error {

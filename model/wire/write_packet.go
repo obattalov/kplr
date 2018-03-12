@@ -1,8 +1,7 @@
 package wire
 
 import (
-	"errors"
-	"sort"
+	"fmt"
 
 	"github.com/kplr-io/container/btsbuf"
 	"github.com/kplr-io/kplr/model"
@@ -10,23 +9,22 @@ import (
 
 type (
 	// WritePacket defines an interface for a group of records that should be
-	// stored into the journal
+	// stored into a journal.
+	//
+	// The packet supposes to have the following format (records in btsbuf):
+	// 1st Record: SourcId encoded as a string value.
+	// 2nd Record: LogEvent with tags to be written
+	// 3rd..Nth Records: LogEvent(s) with tags == ""
 	WritePacket interface {
 		// GetSourceId returns Source Id from known tag Maps
 		GetSourceId() string
 
-		// GetTagNames returns list of tag names in ascending order. This is a
-		// WeakString which must not be stored somewhere in direct form, but it
-		// can be used for transformatios. For example it can be cast to []byte
-		// then stored to disk.
-		GetTagNames() model.SSlice
-
-		// GetTagsMap returns map of tagName:tagValue pairs as map of WeakStrings
-		// must not be stored somewhere
-		GetTagsMap() map[model.WeakString]model.WeakString
-
 		// GetTags returns Tags string, safe to be stored
-		GetTags() string
+		GetTags() model.TagLine
+
+		// Will update tagGroupId for all records in the buffer. The operation
+		// will affect initial buffer value
+		ApplyTagGroupId(tgid int64) error
 
 		// GetDataReader returns reader which points to the data
 		GetDataReader() btsbuf.Iterator
@@ -35,23 +33,16 @@ type (
 	// The BtBufWritePacket wraps a byte buffer and provides WritePacket interface
 	// around it
 	BtBufWritePacket struct {
+		buf []byte
+
 		// Bytes buffer reader
 		bbi btsbuf.Reader
 
-		tagNames model.SSlice
-		tags     string
+		tagLine model.TagLine
+		source  string
 
 		// tm is tags map, it contains key:value pairs
 		tm map[model.WeakString]model.WeakString
-
-		// a helper array, which is used to keep tagNames
-		sArr [20]string
-		// default buffer for iterator
-		defBuf [256]byte
-		// iterator buf
-		buf []byte
-		// bufOk shows the buf has relevant value
-		bufOk bool
 	}
 )
 
@@ -62,122 +53,56 @@ func (bbwp *BtBufWritePacket) Init(buf []byte) error {
 	}
 
 	if bbwp.bbi.End() {
-		return errors.New("empty list")
+		return fmt.Errorf("Empty packet")
 	}
 
-	// get a list of tags encoded as a slice of strings. Odd records are keys, even
-	// ones are values
-	var sArr [20]model.WeakString
-	ss := model.SSlice(sArr[:])
-	ss, _, err = model.UnmarshalSSlice(ss, bbwp.bbi.Get())
-	if err != nil {
-		return err
+	// source
+	ws := model.UnmarshalStringBuf(bbwp.bbi.Get())
+	bbwp.source = ws.String()
+	if len(bbwp.source) == 0 {
+		return fmt.Errorf("Source Id could not be empty")
 	}
-
-	err = bbwp.parseHeader(ss)
-	if err != nil {
-		return err
-	}
-
 	bbwp.bbi.Next()
+
+	// read tagLine from the first record
+	var le model.LogEvent
+	_, err = le.Unmarshal(bbwp.bbi.Get())
+	if err != nil {
+		return err
+	}
+	bbwp.tagLine = le.GetTagLine()
+	if len(bbwp.tagLine) == 0 {
+		return fmt.Errorf("Tags should be provided in first record, but it is empty")
+	}
+
 	return nil
 }
 
 func (bbwp *BtBufWritePacket) GetSourceId() string {
-	return string(bbwp.tm[model.TAG_SRC_ID])
+	return bbwp.source
 }
 
-func (bbwp *BtBufWritePacket) GetTagNames() model.SSlice {
-	return bbwp.tagNames
-}
-
-func (bbwp *BtBufWritePacket) GetTagsMap() map[model.WeakString]model.WeakString {
-	return bbwp.tm
-}
-
-func (bbwp *BtBufWritePacket) GetTags() string {
-	if bbwp.tags == "" {
-		bbwp.tags = string(model.WeakString(model.MapToTags(bbwp.tagNames, bbwp.tm)))
-	}
-
-	return bbwp.tags
+func (bbwp *BtBufWritePacket) GetTags() model.TagLine {
+	return bbwp.tagLine
 }
 
 func (bbwp *BtBufWritePacket) GetDataReader() btsbuf.Iterator {
-	return bbwp
+	return &bbwp.bbi
 }
 
-func (bbwp *BtBufWritePacket) parseHeader(ss model.SSlice) error {
-	if len(ss) < 2 {
-		return errors.New("Expecting at least one pair - source id in tags of the header.")
-	}
-	if len(ss)&1 == 1 {
-		return errors.New("header must contain even number of strings(key:value pairs)")
-	}
-
-	// Sorting keys, before inserting them into the table
-	srtKeys := bbwp.sArr[:0]
-	bbwp.tm = make(map[model.WeakString]model.WeakString, len(ss))
-	for i := 0; i < len(ss); i += 2 {
-		tag := ss[i]
-		bbwp.tm[tag] = ss[i+1]
-		key := string(tag)
-		idx := sort.SearchStrings(srtKeys, key)
-		srtKeys = append(srtKeys, key)
-		if idx < len(srtKeys)-1 {
-			copy(srtKeys[idx+1:], srtKeys[idx:])
-		}
-		srtKeys[idx] = key
-	}
-
-	srcId, ok := bbwp.tm[model.TAG_SRC_ID]
-	if !ok {
-		return errors.New("No expected tag " + model.TAG_SRC_ID + " in the header.")
-	}
-	// Turns model.TAG_SRC_ID to real string
-	bbwp.tm[model.TAG_SRC_ID] = model.WeakString(srcId.String())
-
-	bbwp.tags = ""
-	bbwp.tagNames = model.StrSliceToSSlice(bbwp.sArr[:len(srtKeys)])
-	return nil
-}
-
-// ========================== btsbuf.Iterator ================================
-func (bbwp *BtBufWritePacket) End() bool {
-	return bbwp.bbi.End()
-}
-
-func (bbwp *BtBufWritePacket) Get() []byte {
-	if bbwp.bufOk {
-		return bbwp.buf
-	}
-
-	itBuf := bbwp.bbi.Get()
-	var le model.LogEvent
-	_, err := le.Unmarshal(itBuf)
+func (bbwp *BtBufWritePacket) ApplyTagGroupId(tgid int64) error {
+	var bi btsbuf.Reader
+	err := bi.Reset(bbwp.buf)
 	if err != nil {
-		return nil
+		return err
 	}
-	le.Reset(le.Timestamp(), le.Source(), model.Tags(bbwp.GetTags()))
-	sz := le.BufSize()
+	bi.Next()
 
-	bbwp.buf = bbwp.buf[:cap(bbwp.buf)]
-	if sz > len(bbwp.buf) {
-		bbwp.buf = bbwp.defBuf[:]
-		if sz > len(bbwp.buf) {
-			if sz < 2048 {
-				sz = 2048
-			}
-			bbwp.buf = make([]byte, sz)
-		}
+	var le model.LogEvent
+	le.SetTGroupId(tgid)
+	for !bi.End() {
+		le.MarshalTagGroupIdOnly(bi.Get())
+		bi.Next()
 	}
-	n, _ := le.Marshal(bbwp.buf)
-	bbwp.bufOk = true
-	bbwp.buf = bbwp.buf[:n]
-	return bbwp.buf
-}
-
-func (bbwp *BtBufWritePacket) Next() {
-	bbwp.bufOk = false
-	bbwp.bbi.Next()
+	return nil
 }

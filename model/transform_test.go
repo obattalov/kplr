@@ -6,7 +6,7 @@ import (
 )
 
 var tstStr = WeakString("This is some string for test marshalling speed Yahhoooo 11111111111111111111111111111111111111111111111111")
-var tstTags = Tags("pod=1234134kjhakfdjhlakjdsfhkjahdlf,key=abc,")
+var tstTags = TagLine("pod=1234134kjhakfdjhlakjdsfhkjahdlf,key=abc,")
 
 func BenchmarkMarshalString(b *testing.B) {
 	var buf [200]byte
@@ -145,5 +145,26 @@ func TestCasts(t *testing.T) {
 	s2 = ByteArrayToString(bf)
 	if s2 != "" {
 		t.Fatal("Oops, expecting empty string, but got s2=", s2)
+	}
+}
+
+func TestMarshalStringBuf(t *testing.T) {
+	str := "Hello World"
+	b := []byte{}
+	n, err := MarshalStringBuf(str, b)
+	if err == nil {
+		t.Fatal("should be error, but it is not, n=", n)
+	}
+
+	b = make([]byte, 100)
+	n, err = MarshalStringBuf(str, b)
+	if err != nil || n != len(str) {
+		t.Fatal("should not be an error, but n=", n, ", err=", err)
+	}
+
+	b[0] = 'h'
+	str0 := UnmarshalStringBuf(b[:n]).String()
+	if str0 == str || str0 != "hello World" {
+		t.Fatal("Unexpected values str=", str, ", str0=", str0)
 	}
 }
