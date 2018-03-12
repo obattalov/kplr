@@ -16,7 +16,9 @@ type (
 		GetSourceId() string
 
 		// GetTagNames returns list of tag names in ascending order. This is a
-		// WeakString which must not be stored somewhere
+		// WeakString which must not be stored somewhere in direct form, but it
+		// can be used for transformatios. For example it can be cast to []byte
+		// then stored to disk.
 		GetTagNames() model.SSlice
 
 		// GetTagsMap returns map of tagName:tagValue pairs as map of WeakStrings
@@ -48,7 +50,7 @@ type (
 		defBuf [256]byte
 		// iterator buf
 		buf []byte
-		// flag shows the buf has relevant value
+		// bufOk shows the buf has relevant value
 		bufOk bool
 	}
 )
