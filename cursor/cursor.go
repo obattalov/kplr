@@ -338,5 +338,5 @@ func (c *cur) fmtPureMessage(le *model.LogEvent) string {
 
 func (c *cur) fmtJrnlNameAndMessage(le *model.LogEvent) string {
 	ip := c.it.GetIteratorPos().(journal.IteratorPosition)
-	return fmt.Sprint(time.Unix(0, le.GetTimestamp()), " [", ip.Id, "]: ", string(le.GetMessage()))
+	return fmt.Sprint(le.GetTimestamp()/1000000, " ", le.GetTimestamp(), " ", time.Unix(0, le.GetTimestamp()), " [", ip.Id, "]: ", string(le.GetMessage()))
 }

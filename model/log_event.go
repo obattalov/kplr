@@ -24,6 +24,8 @@ func (le *LogEvent) InitWithTagLine(ts int64, msg WeakString, tgl TagLine) {
 	le.tgl = WeakString(tgl)
 }
 
+// GetTimestamp returns timestamp in nanoseconds. It could be negative if
+// it less than 01/01/1970
 func (le *LogEvent) GetTimestamp() int64 {
 	return le.ts
 }
