@@ -62,3 +62,8 @@ If you see not empty "data" list, you have some journals aggregated! Just type t
 curl '127.0.0.1:8080/logs?__source_id__="system.log"&blocked=false&offset=10&position=tail'
 ```
 The query should return you 10 last log records from "system.log" file, which is collected in your *Log Aggregator* now. 
+
+## Contributing
+If you are interested in contributing some code to this project, thanks! Please first [read and accept the Contributors Agreement](https://api-notebook.anypoint.mulesoft.com/notebooks#bc1cf75a0284268407e4).
+
+To discuss this project, please use its [github issues](https://github.com/kplr-io/kplr/issues) 
