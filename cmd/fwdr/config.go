@@ -4,6 +4,7 @@ type (
 	Config struct {
 		AgregatorIP string
 		RecieverIP string
+		JournalName string
 		KeyName string
 	}
 

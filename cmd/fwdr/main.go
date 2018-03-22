@@ -1,10 +1,44 @@
 package main
 
 import (
+	"forwarder"
 	"config"
+	"net/http"
+	"namespacecontroller"
 )
 
 func main() {
+	cfg, err := parseCLP()
+	if err != nil {
+		return
+	}
+	defer log4g.Shutdown()
+
+	if cfg == nil {
+		return
+	}
+
+	kplr.DefaultLogger.Info("Kepler is starting...")
+	injector := inject.NewInjector(log4g.GetLogger("kplr.injector"), log4g.GetLogger("fb.injector"))
+
+	mainCtx, cancel := context.WithCancel(context.Background())
+	defer kplr.DefaultLogger.Info("Exiting. kplr main context is shutdown.")
+	defer injector.Shutdown()
+	defer cancel()
+
+	fwdr, err := forwarder.NewAgregator(&forwarder.Config{
+		IP: cfg.AgregatorIP
+		JournalName: cfg.JournalName
+		CurStartPos: curStartPos
+		})
+
+	injector.RegisterOne(fwdr, "fwdr")
+
+	injector.Construct()	
+
+	signalChan := make(chan os.Signal, 1)
+	signal.Notify(signalChan, os.Interrupt)
+
 	//parametres:
 	//- config filename (default config.json)
 	//reading config:
@@ -12,29 +46,12 @@ func main() {
 	//- rsyslog sending parametres
 	//- the name of last read record key in kubernetes
 	//getting a number of last read record from kubernetes
+	//creating a channel
 
-	//starting gorutine getRecords
-	go func(config) {
-		//infinit loop
-			//getting records, cursor_id
-			//calculate last record number
-			//put records and last number into channel
+	<-signalChan // wait signals
+	log.Printf("Shutting down...")
 
-
-
-
-		//end of infinit loop
-	}
-
-
-	//starting gorutine sendRecords
-	go func(config) {
-		//infinit loop
-			//getting records and last record number from channel
-			//loop while not success
-				//sending to reciever
-			//save last record number in kubernetes key
-		//end of infinit loop
-	}
+	close(stop) // stop gorutines
+	wg.Wait()   // wait until everything's stopped
 
 }
