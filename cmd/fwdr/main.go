@@ -1,8 +1,8 @@
 package main
 
 import (
-	"fwdr/forwarder"
-	"fwdr/config"
+	"github.com/obattalov/kplr/cmd/fwdr/forwarder"
+	"github.com/obattalov/kplr/cmd/fwdr/config"
 	"net/http"
 	"namespacecontroller"
 )

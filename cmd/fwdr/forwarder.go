@@ -9,7 +9,7 @@ import (
 	"github.com/jrivets/log4g"
 	"io"
 	"log/syslog"
-	"fwdr/config"
+	"github.com/obattalov/kplr/cmd/fwdr/config"
 )
 
 type (
