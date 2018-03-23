@@ -4,6 +4,7 @@ import (
 	"context"
 //	"os"
 //	"os/signal"
+	"bytes"
 	"net/http"
 	"encoding/json"
 	"github.com/jrivets/log4g"
@@ -25,7 +26,7 @@ type (
 
 		RecieverID	string
 		RecieverIP	string
-		LogPriority syslog.Priority
+		LogPriority int
 		LogTag		string
 	}
 
@@ -46,7 +47,7 @@ type (
 
 func NewForwarder(*Config) (*Forwarder , error) {
 
-	rsysWriter, err := syslog.Dial("tcp", Config.RecieverIP, fwdr.LogPriority, fwdr.LogTag) //rsyslog writer
+	rsysWriter, err := Dial("tcp", Config.RecieverIP, fwdr.LogPriority, fwdr.LogTag) //rsyslog writer
 	if err != nil {
 		fwdr.logger.Info("Could not create r-sys-log writer. Error =", err)
 		return nil, err
@@ -133,7 +134,7 @@ func (fwdr *Forwarder) NoSavedData() {
 	return fwdr.savedData.Len() == 0
 }
 
-func (r *Response) Read(p []byte) (n int, err error) {
+func (r *http.Response) Read(p []byte) (n int, err error) {
 	n, err = r.Read(p)
 	if err != nil {
 		n = 0
