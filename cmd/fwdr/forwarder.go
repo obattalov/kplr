@@ -2,8 +2,8 @@ package main
 
 import (
 	"context"
-	"os"
-	"os/signal"
+//	"os"
+//	"os/signal"
 	"net/http"
 	"encoding/json"
 	"github.com/jrivets/log4g"
@@ -13,7 +13,7 @@ import (
 
 type (
 	iForwarder interface {
-		NoSavedData()	boolean
+		NoSavedData()	bool
 		ClearSavedData()
 	}
 
@@ -25,11 +25,12 @@ type (
 
 		RecieverID	string
 		RecieverIP	string
-		LogPriority Priority
+		LogPriority syslog.Priority
 		LogTag		string
 	}
 
-	Forwarder struct iForwarder {
+	Forwarder struct {
+		i 			iForwarder
 		config 		*Config
 		logger 		log4g.Logger
 		curID		uint64
@@ -57,7 +58,7 @@ func NewForwarder(*Config) (*Forwarder , error) {
 	fwdr.httpClient = &http.Client{}
 	fwdr.ctx, fwdr.ctxCancel = context.WithCancel(context.Background())
 	curID := nil //gettig cursor id from key-value store or config-file
-	if curID = nil {
+	if curID == nil {
 		resp, err := fwdr.httpClient.PostForm(fwdr.config.IP + "/cursor", nil)
 		if err != nil {
 			fwdr.logger.Info("Could not get a new cursor. Error =", err)
@@ -89,7 +90,7 @@ func (fwdr *Forwarder) DiInit() error {
 			select {
 			case <-fwdr.ctx.Done():
 				break L1
-			case default:
+			default:
 				fwdr.ForwardData()
 			}
 		}
@@ -129,7 +130,7 @@ func (fwdr *Forwarder) ClearSavedData() {
 }
 
 func (fwdr *Forwarder) NoSavedData() {
-	return fwdr.savedData.Len() = 0
+	return fwdr.savedData.Len() == 0
 }
 
 func (r *Response) Read(p []byte) (n int, err error) {

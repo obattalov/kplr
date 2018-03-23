@@ -2,6 +2,7 @@ package main
 
 import (
 	"net/http"
+	"log/syslog"
 )
 
 func main() {
@@ -24,10 +25,9 @@ func main() {
 	defer cancel()
 
 	fwdr, err := forwarder.NewAgregator(&forwarder.Config{
-		IP: cfg.AgregatorIP
-		JournalName: cfg.JournalName
-		CurStartPos: curStartPos
-		})
+		IP: cfg.AgregatorIP,
+		JournalName: cfg.JournalName,
+		CurStartPos: curStartPos})
 
 	injector.RegisterOne(fwdr, "fwdr")
 
