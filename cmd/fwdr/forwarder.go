@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"strconv"
 //	"os"
 //	"os/signal"
 	"bytes"
@@ -9,7 +10,7 @@ import (
 	"encoding/json"
 	"github.com/jrivets/log4g"
 	"io"
-	"log/syslog"
+	"github.com/gabriel-samfira/syslog"
 )
 
 type (
@@ -26,7 +27,7 @@ type (
 
 		RecieverID	string
 		RecieverIP	string
-		LogPriority int
+		LogPriority syslog.Priority
 		LogTag		string
 	}
 
@@ -35,7 +36,7 @@ type (
 		config 		*Config
 		logger 		log4g.Logger
 		curID		uint64
-		httpClient	http.Client
+		httpClient	*http.Client
 		ctx 		context.Context
 		ctxCancel 	context.CancelFunc
 		savedData 	bytes.Buffer
@@ -50,28 +51,29 @@ func NewForwarder(cfg *Config) (*Forwarder , error) {
 	fwdr := new (Forwarder)
 	fwdr.config = cfg
 	fwdr.logger = log4g.GetLogger("fwdr")
-	fwdr.httpClient = &http.Client{}
+	fwdr.httpClient = new(http.Client)
 	fwdr.ctx, fwdr.ctxCancel = context.WithCancel(context.Background())
 
-	rsysWriter, err := syslog.Dial("tcp", cfg.RecieverIP, fwdr.LogPriority, fwdr.LogTag) //rsyslog writer
+	rsysWriter, err := syslog.Dial("tcp", cfg.RecieverIP, cfg.LogPriority, cfg.LogTag, nil) //rsyslog writer
 	if err != nil {
 		fwdr.logger.Info("Could not create r-sys-log writer. Error =", err)
 		return nil, err
 	}
 
-	curID := nil //gettig cursor id from key-value store or config-file
-	if curID == nil {
-		resp, err := fwdr.httpClient.PostForm(fwdr.config.IP + "/cursor", nil)
+	curID := 0 //gettig cursor id from key-value store or config-file
+	if curID == 0 {
+		resp, err := fwdr.httpClient.PostForm(fwdr.config.AgregatorIP + "/cursor", nil)
 		if err != nil {
 			fwdr.logger.Info("Could not get a new cursor. Error =", err)
 			return nil, err
 		}
+		var resp_j map[string]string
 		err = json.Unmarshal(resp, &resp_j)
 		if err != nil {
 			fwdr.logger.Info("Could not unmarshal cursorID from agregator response. Error =", err)
 			return nil, err
 		}
-		curID = resp_j[0].value //
+		curID, _ = strconv.ParseInt(resp_j["sdf"], 10, 64)
 
 
 	}
