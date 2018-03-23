@@ -1,8 +1,6 @@
 package main
 
 import (
-	"forwarder"
-	"config"
 	"net/http"
 )
 

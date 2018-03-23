@@ -1,4 +1,4 @@
-package forwarder
+package main
 
 import (
 	"context"
