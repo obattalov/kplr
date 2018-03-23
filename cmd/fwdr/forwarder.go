@@ -45,19 +45,20 @@ type (
 
 )
 
-func NewForwarder(*Config) (*Forwarder , error) {
-
-	rsysWriter, err := Dial("tcp", Config.RecieverIP, fwdr.LogPriority, fwdr.LogTag) //rsyslog writer
-	if err != nil {
-		fwdr.logger.Info("Could not create r-sys-log writer. Error =", err)
-		return nil, err
-	}	
+func NewForwarder(cfg *Config) (*Forwarder , error) {
 
 	fwdr := new (Forwarder)
-	fwdr.config = Config
+	fwdr.config = cfg
 	fwdr.logger = log4g.GetLogger("fwdr")
 	fwdr.httpClient = &http.Client{}
 	fwdr.ctx, fwdr.ctxCancel = context.WithCancel(context.Background())
+
+	rsysWriter, err := syslog.Dial("tcp", cfg.RecieverIP, fwdr.LogPriority, fwdr.LogTag) //rsyslog writer
+	if err != nil {
+		fwdr.logger.Info("Could not create r-sys-log writer. Error =", err)
+		return nil, err
+	}
+
 	curID := nil //gettig cursor id from key-value store or config-file
 	if curID == nil {
 		resp, err := fwdr.httpClient.PostForm(fwdr.config.IP + "/cursor", nil)
