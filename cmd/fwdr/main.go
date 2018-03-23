@@ -1,8 +1,8 @@
 package main
 
 import (
-	"forwarder"
-	"config"
+	"fwdr/forwarder"
+	"fwdr/config"
 	"net/http"
 	"namespacecontroller"
 )

@@ -9,6 +9,7 @@ import (
 	"github.com/jrivets/log4g"
 	"io"
 	"log/syslog"
+	"fwdr/config"
 )
 
 type (
@@ -25,6 +26,8 @@ type (
 
 		RecieverID	string
 		RecieverIP	string
+		LogPriority Priority
+		LogTag		string
 	}
 
 	Forwarder struct iForwarder {
@@ -43,7 +46,7 @@ type (
 
 func NewForwarder(*Config) (*Forwarder , error) {
 
-	rsysWriter, err := syslog.Dial("tcp", Config.RecieverIP, syslog.LOG_DEBUG, Config.RecieverID) //rsyslog writer
+	rsysWriter, err := syslog.Dial("tcp", Config.RecieverIP, fwdr.LogPriority, fwdr.LogTag) //rsyslog writer
 	if err != nil {
 		fwdr.logger.Info("Could not create r-sys-log writer. Error =", err)
 		return nil, err
@@ -128,4 +131,15 @@ func (fwdr *Forwarder) ClearSavedData() {
 
 func (fwdr *Forwarder) NoSavedData() {
 	return fwdr.savedData.Len() = 0
+}
+
+func (r *Response) Read(p []byte) (n int, err error) {
+	n, err = r.Read(p)
+	if err != nil {
+		n = 0
+		return
+	}
+	jresp = json.Unmarshal(string(p[:]))
+	
+
 }
