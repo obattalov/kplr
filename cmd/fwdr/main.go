@@ -4,7 +4,6 @@ import (
 	"github.com/obattalov/kplr/cmd/fwdr/forwarder"
 	"github.com/obattalov/kplr/cmd/fwdr/config"
 	"net/http"
-	"namespacecontroller"
 )
 
 func main() {
