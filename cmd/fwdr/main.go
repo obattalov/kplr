@@ -1,8 +1,12 @@
 package main
 
 import (
-//	"net/http"
-//	"log/syslog"
+	"context"
+	"os"
+	"os/signal"
+
+	"github.com/jrivets/log4g"
+	"github.com/kplr-io/kplr"
 )
 
 func main() {
@@ -52,3 +56,74 @@ func main() {
 	wg.Wait()   // wait until everything's stopped
 
 }
+
+///// work with io http
+/*
+package main
+
+import (
+	"net/http"
+//	"bytes"
+	"fmt"
+	"encoding/json"
+	"net/url"
+	"io"
+	
+)
+
+type myHttpResponse http.Response
+
+type (
+	myValues interface{}
+)
+*/
+/*
+//workable
+func main() {
+	var buf bytes.Buffer
+	hc := &http.Client{}
+	resp, _ := hc.Get("http://localhost:8080/journals")
+	n, _ := buf.ReadFrom(resp.Body)
+	fmt.Printf("Read %v bytes\n", n)
+	fmt.Println(buf.String())
+
+	jresp := make(map[string]myValues)
+	bts := make([]byte, n)
+	n1, _ := buf.Read(bts)
+	fmt.Printf("n = %v\n", n1)
+	err := json.Unmarshal(bts, &jresp)
+	if err != nil {
+		fmt.Println(err)
+	}
+	fmt.Println("jresp = ", jresp)
+	for k, v := range jresp {
+		fmt.Printf("%v = %v\n", k, v)
+	}
+
+
+}
+*/
+/*
+func main() {
+	hc := &http.Client{}
+	data := url.Values{}
+	data.Set("__source_id__", "dkpg.log")
+	jresp := make(map[string]myValues)
+
+	resp, _ := hc.PostForm("http://localhost:8080/cursors",data)
+	ToJSON(resp, &jresp)
+
+	for k, v := range jresp {
+		fmt.Printf("%v = %v\n", k, v)
+	}
+
+
+}
+
+func ResponseToJSON(resp *http.Response, jresp *map[string]myValues) {
+	buf := make ([]byte, resp.ContentLength)
+	_, _ = io.ReadFull(resp.Body, buf)
+	_ = json.Unmarshal(buf, jresp)
+
+}
+*/
