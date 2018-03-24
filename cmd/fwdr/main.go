@@ -10,9 +10,11 @@ import (
 	"log/syslog"
 	"bytes"
 	"io"
+	"io/ioutil"
+	"errors"
+	"fmt"
 
 	"github.com/jrivets/log4g"
-	"gopkg.in/alecthomas/kingpin.v2"
 )
 
 const (
@@ -76,7 +78,11 @@ func main() {
 
 
 		go func(cur_cfg *Config) {
-			fwdr, error := NewForwarder(cur_cfg)
+			fwdr, err := NewForwarder(cur_cfg)
+			if err != nil {
+				FLogger.Error(fmt.Sprintf("Could not create forwarder %v. Err = %s", cur_cfg.LogTag, err))
+				return
+			}
 			fwdr.logger.Info("Initializing forwarder " + cur_cfg.LogTag)
 			defer fwdr.logger.Info("Forwarder " + cur_cfg.LogTag + " is over.")
 		L1:
@@ -205,58 +211,34 @@ func ResponseToJSON(resp *http.Response, jresp interface{}) error {
 }
 
 func parseCLP() ([]Config, error) {
+	var filename = defaultConfigFile
+	if IsFileNotExist(filename) {
+		return nil, errors.New("No forwarders config file" + filename)
+	}
+
+	cfgData, err := ioutil.ReadFile(filename)
+	if err != nil {
+		return nil, errors.New(fmt.Sprintf("Could not read configuration file %v. Err = %s", filename, err))
+	}
+
 	var (
-		cfgFile = kingpin.Flag("config-file", "The Forwarder configuration file name").Default(defaultConfigFile).String()
-		pCfg = &Config{}
-	)
-	kingpin.Version("0.0.1")
-	kingpin.Parse()
-
-	if *cfgFile != "" {
-		if IsFileNotExist(*cfgFile) {
-			return Error.New("No forwarders config file" + cfgFile)
-		} else {
-			err := log4g.ConfigF(*cfgFile)
-			if err != nil {
-				return Error.New(fmt.SPrintf("Could not parse %s file as a log4g configuration, please check syntax ", *cfgFile))
-			}
+		cfg []Config
+		cfg_arr []someValues
+		)
+	err = json.Unmarshal(cfgData, cfg_arr)
+	if err != nil {
+		return nil, errors.New(fmt.Sprintf("Could not unmarshal data from %v. Err = %s", filename, err))
+	}
+	for _, cfgi := range cfg_arr {
+		cfgc, ok := cfgi.(Config)
+		if !ok {
+			return nil, errors.New(fmt.Sprintf("Incorrect data in forwarders configuration file %v. Err = %s", filename, err))
 		}
+		cfg = append(cfg, cfgc)
 	}
+	FLogger.Info("Configuration read from ", filename)
 
-	pCfg.ZebraListenOn = *zebraAddr
-	pCfg.ZebraKeyFN = *zebraKey
-	pCfg.ZebraCertFN = *zebraCert
-	pCfg.ZebraCaFN = *zebraCA
-	pCfg.Zebra2WayTls = *zebra2WTls
-	pCfg.HttpListenOn = *httpEndpnt
-	pCfg.HttpsCertFN = *tlsCert
-	pCfg.HttpsKeyFN = *tlsKey
-	pCfg.HttpDebugMode = *debug_api
-	pCfg.JrnlMaxSize = *maxJrnlSize
-	pCfg.JrnlChunkMaxSize = *maxChnkSize
-	pCfg.JournalsDir = *jrnlsDir
-	pCfg.JrnlRecoveryOn = *recoveryOn
-
-	if pCfg.JrnlMaxSize <= pCfg.JrnlChunkMaxSize {
-		kingpin.Fatalf("Misconfiguration. Journal max size %s must be greater than journal's chunk size, which is %s",
-			kplr.FormatSize(pCfg.JrnlMaxSize), kplr.FormatSize(pCfg.JrnlChunkMaxSize))
-	}
-
-	if pCfg.JrnlMaxSize <= 2*pCfg.JrnlChunkMaxSize {
-		kingpin.Fatalf("Possible misconfiguration. The journal max size is %s which is pretty close to journal's chunk size %s. Please check documentation to be sure it is ok for you.",
-			kplr.FormatSize(pCfg.JrnlMaxSize), kplr.FormatSize(pCfg.JrnlChunkMaxSize))
-	}
-
-	// file config
-	fCfg := &Config{}
-	fCfg.readFromFile(*cfgFile)
-
-	// Final config - default, then from file and then params
-	cfg := newDefaultConfig()
-	cfg.Apply(fCfg)
-	cfg.Apply(pCfg)
 	return cfg, nil
-
 }
 
 func IsFileNotExist(filename string) bool {
