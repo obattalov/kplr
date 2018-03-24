@@ -2,18 +2,26 @@ package main
 
 import (
 	"context"
-	"strconv"
+//	"strconv"
 //	"os"
 //	"os/signal"
 	"bytes"
 	"net/http"
+	"net/url"
 	"encoding/json"
 	"github.com/jrivets/log4g"
 	"io"
-	"github.com/gabriel-samfira/syslog"
+	"log/syslog"
 )
 
+const cursorIDfield = "curID"
+
+type myHttpResponse http.Response
+
 type (
+
+	someValues interface{}
+
 	iForwarder interface {
 		NoSavedData()	bool
 		ClearSavedData()
@@ -35,7 +43,7 @@ type (
 		i 			iForwarder
 		config 		*Config
 		logger 		log4g.Logger
-		curID		uint64
+		curID		int64
 		httpClient	*http.Client
 		ctx 		context.Context
 		ctxCancel 	context.CancelFunc
@@ -54,28 +62,44 @@ func NewForwarder(cfg *Config) (*Forwarder , error) {
 	fwdr.httpClient = new(http.Client)
 	fwdr.ctx, fwdr.ctxCancel = context.WithCancel(context.Background())
 
-	rsysWriter, err := syslog.Dial("tcp", cfg.RecieverIP, cfg.LogPriority, cfg.LogTag, nil) //rsyslog writer
+	rsysWriter, err := syslog.Dial("tcp", cfg.RecieverIP, cfg.LogPriority, cfg.LogTag) //rsyslog writer
 	if err != nil {
 		fwdr.logger.Info("Could not create r-sys-log writer. Error =", err)
 		return nil, err
 	}
 
-	curID := 0 //gettig cursor id from key-value store or config-file
+	var curID int64 = 0 //gettig cursor id from key-value store or config-file
 	if curID == 0 {
-		resp, err := fwdr.httpClient.PostForm(fwdr.config.AgregatorIP + "/cursor", nil)
+		uv := url.Values{}
+		uv.Set("",fwdr.config.KQL)
+		resp, err := fwdr.httpClient.PostForm(fwdr.config.AgregatorIP + "/cursor", uv)
 		if err != nil {
 			fwdr.logger.Info("Could not get a new cursor. Error =", err)
 			return nil, err
 		}
-		var resp_j map[string]string
-		err = json.Unmarshal(resp, &resp_j)
+
+
+		//func ReadAtLeast(r Reader, buf []byte, min int) (n int, err error)
+		//func (c *Client) PostForm(url string, data url.Values) (resp *Response, err error)
+		/*
+		type Response struct {
+			StatusCode int    // e.g. 200
+			Body io.ReadCloser
+			ContentLength int64
+			}
+		*/
+		//func Unmarshal(data []byte, v interface{}) error
+
+		resp_j := make(map[string]someValues)
+		err = ResponseToJSON(resp, &resp_j)
+
 		if err != nil {
-			fwdr.logger.Info("Could not unmarshal cursorID from agregator response. Error =", err)
-			return nil, err
+			fwdr.logger.Info("Could not get JSON from agregator response. Error =", err)
+			return nil, err			
 		}
-		curID, _ = strconv.ParseInt(resp_j["sdf"], 10, 64)
 
-
+		curID, _ = resp_j[cursorIDfield].(int64) //type assertion
+		fwdr.savedData.Reset() //put here remained logs data
 	}
 	fwdr.curID = curID
 	fwdr.w = io.MultiWriter(&fwdr.savedData, rsysWriter)
@@ -100,13 +124,13 @@ func (fwdr *Forwarder) DiInit() error {
 		}
 	}()
 
-
+	return nil
 }
 
 func (fwdr *Forwarder) ForwardData() error {
 	if fwdr.NoSavedData() {
 	//if no saved data
-		resp, err := fwdr.httpClient.Get(fwdr.config.IP + "/cursors:" + fwdr.curID)
+		resp, err := fwdr.httpClient.Get(fwdr.config.AgregatorIP + "/cursors:" + string(fwdr.curID))
 		if err != nil {
 			fwdr.logger.Error("Error while getting data by /cursors:. Error = ", err)
 			return err
@@ -133,17 +157,14 @@ func (fwdr *Forwarder) ClearSavedData() {
 	fwdr.savedData.Reset()
 }
 
-func (fwdr *Forwarder) NoSavedData() {
+func (fwdr *Forwarder) NoSavedData() bool {
 	return fwdr.savedData.Len() == 0
 }
 
-func (r *http.Response) Read(p []byte) (n int, err error) {
-	n, err = r.Read(p)
-	if err != nil {
-		n = 0
-		return
-	}
-	jresp = json.Unmarshal(string(p[:]))
-	
 
+func ResponseToJSON(resp *http.Response, jresp interface{}) error {
+	buf := make ([]byte, resp.ContentLength)
+	_, _ = io.ReadFull(resp.Body, buf)
+	err := json.Unmarshal(buf, jresp)
+	return err
 }
