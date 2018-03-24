@@ -1,0 +1,30 @@
+[
+	{
+		"KQL":			"kql request or parametres to send to agregator",
+		
+		"AgregatorIP":	"localhost:8080",
+
+		"RecieverIP":	"localhost:5000",
+		"LogPriority": 	100,
+		"LogTag":		"fwdr id and log tag"
+	},
+	{
+		"KQL":			"kql request or parametres to send to agregator1",
+		
+		"AgregatorIP":	"localhost:8080",
+
+		"RecieverIP":	"localhost:5000",
+		"LogPriority": 	105,
+		"LogTag":		"fwdr id and log tag1"
+	},
+	{
+		"KQL":			"kql request or parametres to send to agregator2",
+		
+		"AgregatorIP":	"localhost:8080",
+
+		"RecieverIP":	"localhost:5000",
+		"LogPriority": 	110,
+		"LogTag":		"fwdr id and log tag2"
+	}
+
+]

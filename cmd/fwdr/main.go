@@ -36,10 +36,8 @@ type (
 	Config struct {
 		KQL			string
 
-		ForwarderID	string
 		AgregatorIP	string
 
-		RecieverID	string
 		RecieverIP	string
 		LogPriority syslog.Priority
 		LogTag		string
