@@ -4,58 +4,266 @@ import (
 	"context"
 	"os"
 	"os/signal"
+	"net/http"
+	"net/url"
+	"encoding/json"
+	"log/syslog"
+	"bytes"
+	"io"
 
 	"github.com/jrivets/log4g"
-	"github.com/kplr-io/kplr"
+	"gopkg.in/alecthomas/kingpin.v2"
 )
 
+const (
+	cursorIDfield = "curID"
+	defaultConfigFile = "config.json"
+	)
+
+type myHttpResponse http.Response
+
+type (
+
+	someValues interface{}
+
+	iForwarder interface {
+		NoSavedData()	bool
+		ClearSavedData()
+	}
+
+	Config struct {
+		KQL			string
+
+		ForwarderID	string
+		AgregatorIP	string
+
+		RecieverID	string
+		RecieverIP	string
+		LogPriority syslog.Priority
+		LogTag		string
+	}
+
+	Forwarder struct {
+		i 			iForwarder
+		config 		*Config
+		logger 		log4g.Logger
+		curID		int64
+		httpClient	*http.Client
+		ctx 		context.Context
+		ctxCancel 	context.CancelFunc
+		savedData 	bytes.Buffer
+		r 			io.Reader
+		w 			io.Writer
+	}
+
+)
+
+var FLogger = log4g.GetLogger("Forwarder")
+
 func main() {
-	cfg, err := parseCLP()
+	configs, err := parseCLP()
 	if err != nil {
-		return
-	}
-	defer log4g.Shutdown()
-
-	if cfg == nil {
+		FLogger.Error("Could not parse config file. Err: ", err)
 		return
 	}
 
-	kplr.DefaultLogger.Info("Kepler is starting...")
-	injector := inject.NewInjector(log4g.GetLogger("kplr.injector"), log4g.GetLogger("fb.injector"))
+	if len(configs) == 0 {
+		FLogger.Warn("No configurated forwarders")
+		return
+	}
 
-	mainCtx, cancel := context.WithCancel(context.Background())
-	defer kplr.DefaultLogger.Info("Exiting. kplr main context is shutdown.")
-	defer injector.Shutdown()
-	defer cancel()
+	for _, cur_cfg := range configs { //goroutines for each config-record
 
-	fwdr, err := forwarder.NewAgregator(&forwarder.Config{
-		IP: cfg.AgregatorIP,
-		JournalName: cfg.JournalName,
-		CurStartPos: curStartPos})
 
-	injector.RegisterOne(fwdr, "fwdr")
+		go func(cur_cfg *Config) {
+			fwdr, error := NewForwarder(cur_cfg)
+			fwdr.logger.Info("Initializing forwarder " + cur_cfg.LogTag)
+			defer fwdr.logger.Info("Forwarder " + cur_cfg.LogTag + " is over.")
+		L1:
+			for {
+				select {
+				case <-fwdr.ctx.Done():
+					break L1
+				default:
+					fwdr.ForwardData()
+				}
+			}
+		}(&cur_cfg)
 
-	injector.Construct()	
+
+
+	}
 
 	signalChan := make(chan os.Signal, 1)
 	signal.Notify(signalChan, os.Interrupt)
+	select {
+	case <-signalChan:
+		FLogger.Warn("Interrupt signal is received")
+	}
 
-	//parametres:
-	//- config filename (default config.json)
-	//reading config:
-	//- access to agregator
-	//- rsyslog sending parametres
-	//- the name of last read record key in kubernetes
-	//getting a number of last read record from kubernetes
-	//creating a channel
-
-	<-signalChan // wait signals
-	log.Printf("Shutting down...")
-
-	close(stop) // stop gorutines
-	wg.Wait()   // wait until everything's stopped
 
 }
+
+
+
+
+
+
+func NewForwarder(cfg *Config) (*Forwarder , error) {
+
+	fwdr := new (Forwarder)
+	fwdr.config = cfg
+	fwdr.logger = log4g.GetLogger("fwdr-" + cfg.LogTag)
+	fwdr.httpClient = new(http.Client)
+	fwdr.ctx, fwdr.ctxCancel = context.WithCancel(context.Background())
+
+	rsysWriter, err := syslog.Dial("tcp", cfg.RecieverIP, cfg.LogPriority, cfg.LogTag) //rsyslog writer
+	if err != nil {
+		fwdr.logger.Info("Could not create r-sys-log writer. Error =", err)
+		return nil, err
+	}
+
+	var curID int64 = 0 //gettig cursor id from key-value store or config-file
+	if curID == 0 {
+		uv := url.Values{}
+		uv.Set("",fwdr.config.KQL)
+		resp, err := fwdr.httpClient.PostForm(fwdr.config.AgregatorIP + "/cursor", uv)
+		if err != nil {
+			fwdr.logger.Info("Could not get a new cursor. Error =", err)
+			return nil, err
+		}
+
+
+		//func ReadAtLeast(r Reader, buf []byte, min int) (n int, err error)
+		//func (c *Client) PostForm(url string, data url.Values) (resp *Response, err error)
+		/*
+		type Response struct {
+			StatusCode int    // e.g. 200
+			Body io.ReadCloser
+			ContentLength int64
+			}
+		*/
+		//func Unmarshal(data []byte, v interface{}) error
+
+		resp_j := make(map[string]someValues)
+		err = ResponseToJSON(resp, &resp_j)
+
+		if err != nil {
+			fwdr.logger.Info("Could not get JSON from agregator response. Error =", err)
+			return nil, err			
+		}
+
+		curID, _ = resp_j[cursorIDfield].(int64) //type assertion
+		fwdr.savedData.Reset() //put here remained logs data
+	}
+	fwdr.curID = curID
+	fwdr.w = io.MultiWriter(&fwdr.savedData, rsysWriter)
+	return fwdr, nil
+}
+
+
+func (fwdr *Forwarder) ForwardData() error {
+	if fwdr.NoSavedData() {
+	//if no saved data
+		resp, err := fwdr.httpClient.Get(fwdr.config.AgregatorIP + "/cursors:" + string(fwdr.curID))
+		if err != nil {
+			fwdr.logger.Error("Error while getting data by /cursors:. Error = ", err)
+			return err
+		}
+		_, err = io.Copy(fwdr.w, resp.Body)
+		if err != nil {
+			fwdr.logger.Error("Error while sending/saving data. Error = ", err)
+			return err
+		}
+		fwdr.ClearSavedData();
+		return nil
+	}
+	//if saved data exists
+		//sending data
+	if _, err := io.Copy(fwdr.w, &fwdr.savedData); err != nil {
+		fwdr.logger.Error("Error while sending data. Error = ", err)			
+		return err
+	}
+	fwdr.ClearSavedData()
+	return nil
+}
+
+func (fwdr *Forwarder) ClearSavedData() {
+	fwdr.savedData.Reset()
+}
+
+func (fwdr *Forwarder) NoSavedData() bool {
+	return fwdr.savedData.Len() == 0
+}
+
+
+func ResponseToJSON(resp *http.Response, jresp interface{}) error {
+	buf := make ([]byte, resp.ContentLength)
+	_, _ = io.ReadFull(resp.Body, buf)
+	err := json.Unmarshal(buf, jresp)
+	return err
+}
+
+func parseCLP() ([]Config, error) {
+	var (
+		cfgFile = kingpin.Flag("config-file", "The Forwarder configuration file name").Default(defaultConfigFile).String()
+		pCfg = &Config{}
+	)
+	kingpin.Version("0.0.1")
+	kingpin.Parse()
+
+	if *cfgFile != "" {
+		if IsFileNotExist(*cfgFile) {
+			return Error.New("No forwarders config file" + cfgFile)
+		} else {
+			err := log4g.ConfigF(*cfgFile)
+			if err != nil {
+				return Error.New(fmt.SPrintf("Could not parse %s file as a log4g configuration, please check syntax ", *cfgFile))
+			}
+		}
+	}
+
+	pCfg.ZebraListenOn = *zebraAddr
+	pCfg.ZebraKeyFN = *zebraKey
+	pCfg.ZebraCertFN = *zebraCert
+	pCfg.ZebraCaFN = *zebraCA
+	pCfg.Zebra2WayTls = *zebra2WTls
+	pCfg.HttpListenOn = *httpEndpnt
+	pCfg.HttpsCertFN = *tlsCert
+	pCfg.HttpsKeyFN = *tlsKey
+	pCfg.HttpDebugMode = *debug_api
+	pCfg.JrnlMaxSize = *maxJrnlSize
+	pCfg.JrnlChunkMaxSize = *maxChnkSize
+	pCfg.JournalsDir = *jrnlsDir
+	pCfg.JrnlRecoveryOn = *recoveryOn
+
+	if pCfg.JrnlMaxSize <= pCfg.JrnlChunkMaxSize {
+		kingpin.Fatalf("Misconfiguration. Journal max size %s must be greater than journal's chunk size, which is %s",
+			kplr.FormatSize(pCfg.JrnlMaxSize), kplr.FormatSize(pCfg.JrnlChunkMaxSize))
+	}
+
+	if pCfg.JrnlMaxSize <= 2*pCfg.JrnlChunkMaxSize {
+		kingpin.Fatalf("Possible misconfiguration. The journal max size is %s which is pretty close to journal's chunk size %s. Please check documentation to be sure it is ok for you.",
+			kplr.FormatSize(pCfg.JrnlMaxSize), kplr.FormatSize(pCfg.JrnlChunkMaxSize))
+	}
+
+	// file config
+	fCfg := &Config{}
+	fCfg.readFromFile(*cfgFile)
+
+	// Final config - default, then from file and then params
+	cfg := newDefaultConfig()
+	cfg.Apply(fCfg)
+	cfg.Apply(pCfg)
+	return cfg, nil
+
+}
+
+func IsFileNotExist(filename string) bool {
+	_, err := os.Stat(filename)
+	return os.IsNotExist(err)
+}
+
 
 ///// work with io http
 /*
