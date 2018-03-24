@@ -30,7 +30,7 @@ type (
 	expValuator interface {
 		// timestamp should return 'ts' value when the expression func is called.
 		// the method can be called only when cExpValTsIgnore flag is not set
-		timestamp() uint64
+		timestamp() int64
 
 		// msg should return 'msg' value when the expression func is called.
 		// the method can be called only when cExpValMsgIgnore flag is not set
@@ -330,10 +330,10 @@ func (ev *eval) buildTagCond(cn *Condition) (err error) {
 
 const unix_no_zone = "2006-01-02T15:04:05"
 
-func parseTime(val string) (uint64, error) {
+func parseTime(val string) (int64, error) {
 	v, err := strconv.ParseInt(val, 10, 64)
 	if err == nil {
-		return uint64(v), nil
+		return v, nil
 	}
 
 	tm, err := time.Parse(time.RFC3339, val)
@@ -344,5 +344,5 @@ func parseTime(val string) (uint64, error) {
 		}
 	}
 
-	return uint64(tm.Unix()), nil
+	return tm.UnixNano(), nil
 }

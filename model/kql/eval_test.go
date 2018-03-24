@@ -9,14 +9,14 @@ import (
 type (
 	testExpValuator struct {
 		t    *testing.T
-		ts   uint64
+		ts   int64
 		ms   model.WeakString
 		tags map[string]string
 		flgs int
 	}
 )
 
-func (tev *testExpValuator) timestamp() uint64 {
+func (tev *testExpValuator) timestamp() int64 {
 	if tev.flgs&cExpValTsIgnore != 0 {
 		tev.t.Fatal("tsFunc must not be called, but it is.")
 	}

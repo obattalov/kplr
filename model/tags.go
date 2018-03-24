@@ -35,6 +35,7 @@ const (
 
 	TAG_TIMESTAMP = "ts"
 	TAG_MESSAGE   = "msg"
+	TAG_JOURNAL   = "src"
 )
 
 var (

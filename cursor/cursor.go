@@ -3,14 +3,13 @@ package cursor
 import (
 	"context"
 	"errors"
-	"fmt"
 	"io"
-	"time"
 
 	"github.com/jrivets/log4g"
 	"github.com/kplr-io/kplr/journal"
 	"github.com/kplr-io/kplr/model"
 	"github.com/kplr-io/kplr/model/evstrm"
+	"github.com/kplr-io/kplr/model/index"
 	"github.com/kplr-io/kplr/mpool"
 )
 
@@ -47,26 +46,37 @@ type (
 		GetPosition() CursorPosition
 	}
 
+	CursorSettings struct {
+		CursorId     string
+		Sources      []string
+		FmtJson      bool
+		FmtFields    []string
+		FmtQuotation bool
+	}
+
 	CursorProvider interface {
 		// Executes the KQL query and returns Reader which will return
-		NewCursor(curId string, srcs []string) (Cursor, error)
+		NewCursor(cs *CursorSettings) (Cursor, error)
 	}
 
 	curProvider struct {
 		JController journal.Controller `inject:""`
 		MPool       mpool.Pool         `inject:"mPool"`
+		TIndexer    index.TagsIndexer  `inject:"tIndexer"`
 		logger      log4g.Logger
 	}
 
 	// cur is NOT thread-safe Cursor implementation
 	cur struct {
+		cp     *curProvider
 		its    map[string]*journal.Iterator
 		it     evstrm.Iterator
 		logger log4g.Logger
 		id     string
+		le     model.LogEvent
 
 		// fmtResult is used by the cursor to format every resulted line
-		fmtResult func(le *model.LogEvent) string
+		fmtResult curFmtF
 	}
 )
 
@@ -88,31 +98,31 @@ func NewCursorProvider() CursorProvider {
 
 // NewCursor creates new Cursor (cur instance). It expects list of sources - journal
 // ids, where it will read data from.
-func (cp *curProvider) NewCursor(curId string, srcs []string) (Cursor, error) {
-	cp.logger.Debug("NewCursor with id=", curId, " for ", srcs)
-	if len(srcs) == 0 {
+func (cp *curProvider) NewCursor(cs *CursorSettings) (Cursor, error) {
+	cp.logger.Debug("NewCursor with id=", cs.CursorId, " for ", cs.Sources)
+	if len(cs.Sources) == 0 {
 		return nil, errors.New("To create the cursor at least one of journal (data source) name should be specified")
 	}
 
 	var it evstrm.Iterator
-	its := make(map[string]*journal.Iterator, len(srcs))
+	its := make(map[string]*journal.Iterator, len(cs.Sources))
 
-	if len(srcs) == 1 {
-		rd, err := cp.JController.GetReader(srcs[0])
+	if len(cs.Sources) == 1 {
+		rd, err := cp.JController.GetReader(cs.Sources[0])
 		if err != nil {
 			return nil, err
 		}
 
 		jit := journal.NewIterator(rd, cp.MPool.GetBtsBuf(DEF_RD_BUF_SIZE))
-		jit.Id = srcs[0]
-		its[srcs[0]] = jit
+		jit.Id = cs.Sources[0]
+		its[cs.Sources[0]] = jit
 
 		it = jit
 	} else {
-		mxs := make([]evstrm.Iterator, len(srcs))
+		mxs := make([]evstrm.Iterator, len(cs.Sources))
 
 		// first make basic journal iterators
-		for i, srcId := range srcs {
+		for i, srcId := range cs.Sources {
 			rd, err := cp.JController.GetReader(srcId)
 			if err != nil {
 				return nil, err
@@ -142,15 +152,13 @@ func (cp *curProvider) NewCursor(curId string, srcs []string) (Cursor, error) {
 	}
 
 	c := new(cur)
+	c.cp = cp
 	c.it = it
 	c.its = its
-	c.id = curId
-	c.fmtResult = c.fmtPureMessage
+	c.id = cs.CursorId
 
-	// TODO: support formatter later
-	if len(its) > 1 {
-		c.fmtResult = c.fmtJrnlNameAndMessage
-	}
+	fmtr := newCurFromatter(c, cs.FmtJson, cs.FmtFields, cs.FmtQuotation)
+	c.fmtResult = fmtr.getCurFmtF()
 
 	c.logger = log4g.GetLogger("kplr.cursor").WithId("{" + c.id + "}").(log4g.Logger)
 	return c, nil
@@ -293,17 +301,16 @@ func (c *cur) Close() error {
 
 // nextRecord reads current log event, format it, if it was read successfully and
 // iterate to next event. Returns the formatted string and an error if any
-func (c *cur) nextRecord() (string, error) {
-	var le model.LogEvent
+func (c *cur) nextRecord() ([]byte, error) {
 	if c.it.End() {
-		return "", io.EOF
+		return nil, io.EOF
 	}
 
-	err := c.it.Get(&le)
+	err := c.it.Get(&c.le)
 	if err != nil {
-		return "", err
+		return nil, err
 	}
-	res := c.fmtResult(&le)
+	res := c.fmtResult()
 	c.it.Next()
 
 	return res, nil
@@ -327,16 +334,4 @@ func (c *cur) onReaderClosed() {
 	for _, it := range c.its {
 		it.JReader.Close()
 	}
-}
-
-func (c *cur) fmtPureMessage(le *model.LogEvent) string {
-	// the reader strategy is not to ask for a new buffer until the previous
-	// one is completely read. It means iterators are not going to be touched
-	// until the buffer is done. We hope it is safe not copy source here, but cast
-	return string(le.GetMessage())
-}
-
-func (c *cur) fmtJrnlNameAndMessage(le *model.LogEvent) string {
-	ip := c.it.GetIteratorPos().(journal.IteratorPosition)
-	return fmt.Sprint(le.GetTimestamp()/1000000, " ", le.GetTimestamp(), " ", time.Unix(0, le.GetTimestamp()), " [", ip.Id, "]: ", string(le.GetMessage()))
 }

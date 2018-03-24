@@ -4,14 +4,12 @@ import (
 	"context"
 	"errors"
 	"io"
-
-	"github.com/kplr-io/kplr/model"
 )
 
 type (
 	// recsReader is used by the curReader for reading records from a cursor
 	recsReader interface {
-		nextRecord() (string, error)
+		nextRecord() ([]byte, error)
 		waitRecords(ctx context.Context)
 		onReaderClosed()
 	}
@@ -82,7 +80,7 @@ func (r *curReader) fillBuf(waitIfEof bool) error {
 			return errAlreadyClosed
 		}
 
-		s, err := r.rr.nextRecord()
+		res, err := r.rr.nextRecord()
 		if err == io.EOF && waitIfEof {
 			r.rr.waitRecords(r.ctx)
 			continue
@@ -92,7 +90,7 @@ func (r *curReader) fillBuf(waitIfEof bool) error {
 			return err
 		}
 
-		r.buf = model.StringToByteArray(s)
+		r.buf = res
 		if r.limit > 0 {
 			r.limit--
 		}

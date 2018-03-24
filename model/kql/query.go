@@ -33,6 +33,10 @@ type (
 
 		// source journals
 		jrnls []string
+
+		// result format
+		fmtTxt    bool
+		fmtFields []string
 	}
 
 	queryExpValuator struct {
@@ -85,6 +89,9 @@ func Compile(kQuery string, idxer index.TagsIndexer) (*Query, error) {
 	}
 
 	qry.jrnls, err = filterJournals(jrnls, buildFromList(s.From))
+	qry.fmtTxt = strings.ToLower(kplr.GetStringVal(s.Format, "text")) != "json"
+	qry.fmtFields = buildFromList(s.Fields)
+
 	return qry, err
 }
 
@@ -98,6 +105,17 @@ func (q *Query) Offset() int64 {
 
 func (q *Query) Sources() []string {
 	return q.jrnls
+}
+
+// FormatJson returns whether result should be formatted as JSON, otherwise will
+// be plain text
+func (q *Query) FormatJson() bool {
+	return !q.fmtTxt
+}
+
+// FromatFields returns list of fields that should be included into the result
+func (q *Query) FromatFields() []string {
+	return q.fmtFields
 }
 
 // Position returns position provided, or head, if the position was skipped in
@@ -141,8 +159,8 @@ func (q *Query) Filter(le *model.LogEvent) bool {
 }
 
 // tagGroupDesc provide expValuator to check tags
-func (qv *queryExpValuator) timestamp() uint64 {
-	return uint64(qv.le.GetTimestamp())
+func (qv *queryExpValuator) timestamp() int64 {
+	return qv.le.GetTimestamp()
 }
 
 func (qv *queryExpValuator) msg() model.WeakString {
@@ -197,7 +215,7 @@ func filterJournals(jrnls, exprs []string) ([]string, error) {
 	return res, nil
 }
 
-func buildFromList(jl *JrnlList) []string {
+func buildFromList(jl *NamesList) []string {
 	if jl == nil || len(jl.JrnlNames) == 0 {
 		return []string{}
 	}

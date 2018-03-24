@@ -69,6 +69,13 @@ func GetStringVal(ptr *string, defVal string) string {
 	return defVal
 }
 
+func GetStringPtr(val string) *string {
+	if val == "" {
+		return nil
+	}
+	return &val
+}
+
 func IsFileNotExist(filename string) bool {
 	_, err := os.Stat(filename)
 	return os.IsNotExist(err)
