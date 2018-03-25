@@ -44,7 +44,6 @@ type (
 	}
 
 	Forwarder struct {
-		i 			iForwarder
 		config 		*Config
 		logger 		log4g.Logger
 		curID		int64
