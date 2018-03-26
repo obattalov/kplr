@@ -237,10 +237,10 @@ func parseCLP() ([]Config, error) {
 	if err != nil {
 		return nil, errors.New(fmt.Sprintf("Could not unmarshal data from %v. Err = %s", filename, err))
 	}
-	if cfg_arr.AgregatorIP == nil {
+	if cfg_arr.AgregatorIP == "" {
 		return nil, errors.New(fmt.Sprintf("Error in config file: no AgregatorIP value"))
 	}
-	if cfg_arr.RecieverIP == nil {
+	if cfg_arr.RecieverIP == "" {
 		return nil, errors.New(fmt.Sprintf("Error in config file: no RecieverIP value"))
 	}
 	if cfg_arr.Journals == nil || len(cfg_arr.Journals) == 0 {
@@ -251,13 +251,13 @@ func parseCLP() ([]Config, error) {
 		var cfgc Config
 
 		if cfgi.Journal == "" {
-			return nil, errors.New(fmt.Printf("Error in Journal description: no Journal name"))
+			return nil, errors.New("Error in Journal description: no Journal name")
 		}
 		if cfgi.LogPriority == 0 {
-			return nil, errors.New(fmt.Printf("Error in Journal description: no LogPriority (int)"))
+			return nil, errors.New("Error in Journal description: no LogPriority (int)")
 		}
 		if cfgi.LogTag == "" {
-			return nil, errors.New(fmt.Printf("Error in Journal description: no LogTag value"))
+			return nil, errors.New("Error in Journal description: no LogTag value")
 		}
 		cfgc.Journal = cfgi.Journal
 		cfgc.LogPriority = cfgi.LogPriority
