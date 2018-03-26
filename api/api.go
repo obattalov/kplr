@@ -47,6 +47,7 @@ type (
 		Config         RestApiConfig         `inject:"restApiConfig"`
 		CursorProvider cursor.CursorProvider `inject:""`
 		JrnlCtrlr      journal.Controller    `inject:""`
+		MCtx           context.Context       `inject:"mainCtx"`
 
 		rdsCnt    int32
 		lock      sync.Mutex
@@ -478,7 +479,11 @@ func (ra *RestApi) newCursorByQuery(kqlTxt string) (cursor.Cursor, *kql.Query, e
 	}
 
 	id := atomic.AddInt32(&ra.rdsCnt, 1)
-	cur, err := ra.CursorProvider.NewCursor(strconv.Itoa(int(id)), jrnls)
+	cur, err := ra.CursorProvider.NewCursor(&cursor.CursorSettings{
+		CursorId:  strconv.Itoa(int(id)),
+		Sources:   jrnls,
+		Formatter: qry.GetFormatter(),
+	})
 	if err != nil {
 		return cur, qry, err
 	}
@@ -561,6 +566,9 @@ func (ra *RestApi) sendData(c *gin.Context, rdr io.ReadCloser, blocked bool) {
 					break L1
 				case <-clsd:
 					ra.logger.Debug("sendData(): <-clsd, id=", id)
+					break L1
+				case <-ra.MCtx.Done():
+					ra.logger.Debug("sendData(): <-ra.MCtx.Done(), id=", id)
 					break L1
 				}
 			}

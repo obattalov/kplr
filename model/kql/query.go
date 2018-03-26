@@ -33,6 +33,9 @@ type (
 
 		// source journals
 		jrnls []string
+
+		// result format
+		formatter *Formatter
 	}
 
 	queryExpValuator struct {
@@ -47,8 +50,14 @@ func Compile(kQuery string, idxer index.TagsIndexer) (*Query, error) {
 		return nil, err
 	}
 
+	fmtr, err := NewFormatter(kplr.GetStringVal(s.Format, "{msg}"), nil)
+	if err != nil {
+		return nil, err
+	}
+
 	qry := new(Query)
 	qry.QSel = s
+	qry.formatter = fmtr
 	qry.idxer = idxer
 	qry.tgCache = make(map[int64]*tagGroupDesc)
 	qry.tgChkFunc, err = evaluate(s.Where, &qry.tgChkValuator, cExpValMsgIgnore|cExpValTsIgnore)
@@ -83,7 +92,6 @@ func Compile(kQuery string, idxer index.TagsIndexer) (*Query, error) {
 			jrnls = append(qry.jrnls, j)
 		}
 	}
-
 	qry.jrnls, err = filterJournals(jrnls, buildFromList(s.From))
 	return qry, err
 }
@@ -98,6 +106,10 @@ func (q *Query) Offset() int64 {
 
 func (q *Query) Sources() []string {
 	return q.jrnls
+}
+
+func (q *Query) GetFormatter() *Formatter {
+	return q.formatter
 }
 
 // Position returns position provided, or head, if the position was skipped in
@@ -141,8 +153,8 @@ func (q *Query) Filter(le *model.LogEvent) bool {
 }
 
 // tagGroupDesc provide expValuator to check tags
-func (qv *queryExpValuator) timestamp() uint64 {
-	return uint64(qv.le.GetTimestamp())
+func (qv *queryExpValuator) timestamp() int64 {
+	return qv.le.GetTimestamp()
 }
 
 func (qv *queryExpValuator) msg() model.WeakString {
@@ -197,7 +209,7 @@ func filterJournals(jrnls, exprs []string) ([]string, error) {
 	return res, nil
 }
 
-func buildFromList(jl *JrnlList) []string {
+func buildFromList(jl *NamesList) []string {
 	if jl == nil || len(jl.JrnlNames) == 0 {
 		return []string{}
 	}

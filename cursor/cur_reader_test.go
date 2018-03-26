@@ -19,13 +19,13 @@ func new_rr_test(src []string) *rr_test {
 	return &rr_test{src: src}
 }
 
-func (rr *rr_test) nextRecord() (string, error) {
+func (rr *rr_test) nextRecord() ([]byte, error) {
 	if rr.idx < len(rr.src) {
 		res := rr.src[rr.idx]
 		rr.idx++
-		return res, nil
+		return []byte(res), nil
 	}
-	return "", io.EOF
+	return nil, io.EOF
 }
 
 func (rr *rr_test) onReaderClosed() {

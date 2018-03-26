@@ -8,6 +8,7 @@ import (
 	"github.com/kplr-io/journal"
 	kj "github.com/kplr-io/kplr/journal"
 	"github.com/kplr-io/kplr/model"
+	"github.com/kplr-io/kplr/model/kql"
 	"github.com/kplr-io/kplr/model/wire"
 	"github.com/kplr-io/kplr/mpool"
 )
@@ -55,7 +56,8 @@ func new_test_cur_provider(jrnls map[string][]string) *curProvider {
 
 func TestOneJournal(t *testing.T) {
 	cp := new_test_cur_provider(map[string][]string{"j1": []string{"aa", "bb"}})
-	c, err := cp.NewCursor("tst", []string{"j1"})
+	f, _ := kql.NewFormatter("{msg}", nil)
+	c, err := cp.NewCursor(&CursorSettings{CursorId: "tst", Sources: []string{"j1"}, Formatter: f})
 	if err != nil {
 		t.Fatal("expecting no error, but err=", err)
 	}
@@ -75,7 +77,8 @@ func TestOneJournal(t *testing.T) {
 
 func TestOneJournalLimit(t *testing.T) {
 	cp := new_test_cur_provider(map[string][]string{"j1": []string{"aa", "bb"}})
-	c, err := cp.NewCursor("tst", []string{"j1"})
+	f, _ := kql.NewFormatter("{msg}", nil)
+	c, err := cp.NewCursor(&CursorSettings{CursorId: "tst", Sources: []string{"j1"}, Formatter: f})
 	if err != nil {
 		t.Fatal("expecting no error, but err=", err)
 	}
@@ -91,7 +94,8 @@ func TestOneJournalLimit(t *testing.T) {
 
 func TestManyJournals(t *testing.T) {
 	cp := new_test_cur_provider(map[string][]string{"j1": []string{"aa", "bb"}, "j2": []string{"cc", "dd"}, "j3": []string{"ee"}})
-	c, err := cp.NewCursor("tst", []string{"j1", "j2", "j3"})
+	f, _ := kql.NewFormatter("{msg}", nil)
+	c, err := cp.NewCursor(&CursorSettings{CursorId: "tst", Sources: []string{"j1", "j2", "j3"}, Formatter: f})
 	if err != nil {
 		t.Fatal("expecting no error, but err=", err)
 	}
@@ -107,7 +111,8 @@ func TestManyJournals(t *testing.T) {
 
 func TestManyJournals2(t *testing.T) {
 	cp := new_test_cur_provider(map[string][]string{"j1": []string{"aa", "bb"}, "j2": []string{"cc", "dd"}})
-	c, err := cp.NewCursor("tst", []string{"j1", "j2"})
+	f, _ := kql.NewFormatter("{msg}", nil)
+	c, err := cp.NewCursor(&CursorSettings{CursorId: "tst", Sources: []string{"j1", "j2"}, Formatter: f})
 	if err != nil {
 		t.Fatal("expecting no error, but err=", err)
 	}
@@ -123,7 +128,8 @@ func TestManyJournals2(t *testing.T) {
 
 func TestManyJournalsLimit(t *testing.T) {
 	cp := new_test_cur_provider(map[string][]string{"j1": []string{"aa", "bb"}, "j2": []string{"cc", "dd"}})
-	c, err := cp.NewCursor("tst", []string{"j1", "j2"})
+	f, _ := kql.NewFormatter("{msg}", nil)
+	c, err := cp.NewCursor(&CursorSettings{CursorId: "tst", Sources: []string{"j1", "j2"}, Formatter: f})
 	if err != nil {
 		t.Fatal("expecting no error, but err=", err)
 	}
