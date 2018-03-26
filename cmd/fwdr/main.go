@@ -26,15 +26,26 @@ type myHttpResponse http.Response
 
 type (
 
-	someValues interface{}
+	someValues struct {
+		AgregatorIP	string
+		RecieverIP	string
+		Journals 	[]JDesc
+
+	}
 
 	iForwarder interface {
 		NoSavedData()	bool
 		ClearSavedData()
 	}
 
+	JDesc struct {
+		Journal		string
+		LogPriority syslog.Priority
+		LogTag		string
+	}
+
 	Config struct {
-		KQL			string
+		Journal		string
 
 		AgregatorIP	string
 
@@ -221,19 +232,42 @@ func parseCLP() ([]Config, error) {
 
 	var (
 		cfg []Config
-		cfg_arr []someValues
+		cfg_arr someValues
 		)
 	err = json.Unmarshal(cfgData, cfg_arr)
 	if err != nil {
 		return nil, errors.New(fmt.Sprintf("Could not unmarshal data from %v. Err = %s", filename, err))
 	}
-	for _, cfgi := range cfg_arr {
-		cfgc, ok := cfgi.(Config)
-		if !ok {
-			return nil, errors.New(fmt.Sprintf("Incorrect data in forwarders configuration file %v. Err = %s", filename, err))
+	if cfg_arr.AgregatorIP == nil {
+		return nil, errors.New(fmt.Sprintf("Error in config file: no AgregatorIP value"))
+	}
+	if cfg_arr.RecieverIP == nil {
+		return nil, errors.New(fmt.Sprintf("Error in config file: no RecieverIP value"))
+	}
+	if cfg_arr.Journals == nil || len(cfg_arr.Journals) == 0 {
+		return nil, errors.New(fmt.Sprintf("Error in config file: no Journals description"))
+	}
+
+	for _, cfgi := range cfg_arr.Journals {
+		var cfgc Config
+
+		if cfgi.Journal == "" {
+			return nil, errors.New(fmt.Printf("Error in Journal description: no Journal name"))
 		}
+		if cfgi.LogPriority == 0 {
+			return nil, errors.New(fmt.Printf("Error in Journal description: no LogPriority (int)"))
+		}
+		if cfgi.LogTag == "" {
+			return nil, errors.New(fmt.Printf("Error in Journal description: no LogTag value"))
+		}
+		cfgc.Journal = cfgi.Journal
+		cfgc.LogPriority = cfgi.LogPriority
+		cfgc.LogTag = cfgi.LogTag		
+		cfgc.RecieverIP 	= cfg_arr.RecieverIP
+		cfgc.AgregatorIP 	= cfg_arr.AgregatorIP
 		cfg = append(cfg, cfgc)
 	}
+
 	FLogger.Info("Configuration read from ", filename)
 
 	return cfg, nil
