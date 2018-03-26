@@ -2,6 +2,12 @@ package main
 
 import (
 "fmt"
+"io"
+"net/http"
+"bytes"
+"log/syslog"
+"os"
+"os/signal"
 )
 
 type (
@@ -37,7 +43,7 @@ type (
 )
 
 
-func main() {
+func main1() {
 
 	var cfg []Config
 
@@ -85,4 +91,44 @@ func main() {
 	}
 	fmt.Printf("%s", cfg)
 	return
+}
+
+func main() {
+	var (
+		savedData bytes.Buffer
+		RecieverIP = "localhost:514"
+		AgregatorIP = "127.0.0.1:8080"
+		)
+
+	rsysWriter, err := syslog.Dial("tcp", RecieverIP, 100, "test_log_tag") //rsyslog writer
+	if err != nil {
+		fmt.Printf("Could not create r-sys-log writer. Error = %s\n", err)
+		return
+	}
+
+	KQL := "select from 'krnl.log'"
+	w := io.MultiWriter(&savedData, rsysWriter, os.Stdout)
+
+
+	go func() {
+		for {
+			get_req := AgregatorIP + "/logs?\"" + string(KQL) + "\""
+			fmt.Printf("Trying to get %s\n", get_req)
+			resp, err := http.Get(get_req)
+			if err != nil {
+				fmt.Printf("Could not get request. Error = %s\n", err)
+				return				
+			}			
+			io.Copy(w, resp.Body)
+			resp.Body.Close()
+		}
+	}()
+
+	signalChan := make(chan os.Signal, 1)
+	signal.Notify(signalChan, os.Interrupt)
+	select {
+	case <-signalChan:
+		fmt.Println("Interrupt signal is received")
+	}
+
 }
