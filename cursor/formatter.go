@@ -7,21 +7,15 @@ import (
 	"github.com/kplr-io/container/btsbuf"
 	"github.com/kplr-io/kplr/journal"
 	"github.com/kplr-io/kplr/model"
+	"github.com/kplr-io/kplr/model/kql"
 )
 
 type (
 	// curFormatter struct is a helper for formatting a cursor output
 	curFormatter struct {
-		c         *cur
-		cnctr     btsbuf.Concatenator
-		fmtTokens []*fmtToken
-	}
-
-	fmtToken struct {
-		tt        int
-		bv        []byte
-		varName   string
-		quotation bool
+		c     *cur
+		cnctr btsbuf.Concatenator
+		fmtr  *kql.Formatter
 	}
 
 	// curFmtF cursor formatter function
@@ -33,31 +27,15 @@ const (
 	cFmtVarToken
 )
 
-func newCurFromatter(c *cur, json bool, fields []string, qtn bool) *curFormatter {
+func newCurFromatter(c *cur, fmtr *kql.Formatter) *curFormatter {
 	cf := new(curFormatter)
 	cf.c = c
-
-	flds := fields
-	if len(flds) == 0 {
-		flds = []string{model.TAG_MESSAGE}
-	}
-
-	if len(flds) != 1 || flds[0] == model.TAG_MESSAGE || json {
-		if json {
-			cf.fmtTokens = compileJsonTokens(flds)
-		} else {
-			cf.fmtTokens = compileTextTokens(flds, " ", qtn)
-		}
-	}
-
+	cf.fmtr = fmtr.WithFunc(cf.getValue)
 	return cf
 }
 
 func (cf *curFormatter) getCurFmtF() curFmtF {
-	if len(cf.fmtTokens) == 0 {
-		return cf.fmtSimple
-	}
-	return cf.fmtByTokens
+	return cf.fmtLine
 }
 
 func (cf *curFormatter) checkBuf() {
@@ -73,15 +51,9 @@ func (cf *curFormatter) fmtSimple() []byte {
 	return model.StringToByteArray(string(cf.c.le.GetMessage()))
 }
 
-func (cf *curFormatter) fmtByTokens() []byte {
+func (cf *curFormatter) fmtLine() []byte {
 	cf.checkBuf()
-	for _, t := range cf.fmtTokens {
-		if t.tt == cFmtStringToken {
-			cf.cnctr.Write(t.bv)
-		} else {
-			cf.cnctr.Write(model.StringToByteArray(cf.getValue(t.varName, t.quotation)))
-		}
-	}
+	cf.fmtr.Format(&cf.cnctr)
 	return cf.cnctr.Buf()
 }
 
@@ -118,41 +90,4 @@ func (cf *curFormatter) getTags() *model.Tags {
 		return nil
 	}
 	return tds.Tags
-}
-
-func compileJsonTokens(fields []string) []*fmtToken {
-	res := make([]*fmtToken, 0, len(fields)*2)
-	notFirst := false
-	for _, fld := range fields {
-		var bb []byte
-		if notFirst {
-			bb = []byte(", \"" + fld + "\": ")
-		} else {
-			bb = []byte("{\"" + fld + "\": ")
-		}
-		notFirst = true
-		res = append(res, &fmtToken{tt: cFmtStringToken, bv: bb})
-		res = append(res, &fmtToken{tt: cFmtVarToken, varName: fld, quotation: true})
-	}
-	res = append(res, &fmtToken{tt: cFmtStringToken, bv: []byte("}\n")})
-	return res
-}
-
-func compileTextTokens(fields []string, sep string, qtn bool) []*fmtToken {
-	res := make([]*fmtToken, 0, len(fields)*2)
-	sepBuf := []byte(sep)
-	notFirst := false
-	for _, fld := range fields {
-		if notFirst {
-			res = append(res, &fmtToken{tt: cFmtStringToken, bv: sepBuf, quotation: qtn})
-		}
-		notFirst = true
-		res = append(res, &fmtToken{tt: cFmtVarToken, varName: fld, quotation: qtn})
-	}
-
-	if fields[len(fields)-1] != model.TAG_MESSAGE {
-		res = append(res, &fmtToken{tt: cFmtStringToken, bv: []byte("\n"), quotation: qtn})
-	}
-
-	return res
 }

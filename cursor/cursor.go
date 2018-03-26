@@ -10,6 +10,7 @@ import (
 	"github.com/kplr-io/kplr/model"
 	"github.com/kplr-io/kplr/model/evstrm"
 	"github.com/kplr-io/kplr/model/index"
+	"github.com/kplr-io/kplr/model/kql"
 	"github.com/kplr-io/kplr/mpool"
 )
 
@@ -47,11 +48,9 @@ type (
 	}
 
 	CursorSettings struct {
-		CursorId     string
-		Sources      []string
-		FmtJson      bool
-		FmtFields    []string
-		FmtQuotation bool
+		CursorId  string
+		Sources   []string
+		Formatter *kql.Formatter
 	}
 
 	CursorProvider interface {
@@ -157,7 +156,7 @@ func (cp *curProvider) NewCursor(cs *CursorSettings) (Cursor, error) {
 	c.its = its
 	c.id = cs.CursorId
 
-	fmtr := newCurFromatter(c, cs.FmtJson, cs.FmtFields, cs.FmtQuotation)
+	fmtr := newCurFromatter(c, cs.Formatter)
 	c.fmtResult = fmtr.getCurFmtF()
 
 	c.logger = log4g.GetLogger("kplr.cursor").WithId("{" + c.id + "}").(log4g.Logger)

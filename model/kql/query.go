@@ -35,8 +35,7 @@ type (
 		jrnls []string
 
 		// result format
-		fmtTxt    bool
-		fmtFields []string
+		formatter *Formatter
 	}
 
 	queryExpValuator struct {
@@ -51,8 +50,14 @@ func Compile(kQuery string, idxer index.TagsIndexer) (*Query, error) {
 		return nil, err
 	}
 
+	fmtr, err := NewFormatter(kplr.GetStringVal(s.Format, "{msg}"), nil)
+	if err != nil {
+		return nil, err
+	}
+
 	qry := new(Query)
 	qry.QSel = s
+	qry.formatter = fmtr
 	qry.idxer = idxer
 	qry.tgCache = make(map[int64]*tagGroupDesc)
 	qry.tgChkFunc, err = evaluate(s.Where, &qry.tgChkValuator, cExpValMsgIgnore|cExpValTsIgnore)
@@ -87,11 +92,7 @@ func Compile(kQuery string, idxer index.TagsIndexer) (*Query, error) {
 			jrnls = append(qry.jrnls, j)
 		}
 	}
-
 	qry.jrnls, err = filterJournals(jrnls, buildFromList(s.From))
-	qry.fmtTxt = strings.ToLower(kplr.GetStringVal(s.Format, "text")) != "json"
-	qry.fmtFields = buildFromList(s.Fields)
-
 	return qry, err
 }
 
@@ -107,15 +108,8 @@ func (q *Query) Sources() []string {
 	return q.jrnls
 }
 
-// FormatJson returns whether result should be formatted as JSON, otherwise will
-// be plain text
-func (q *Query) FormatJson() bool {
-	return !q.fmtTxt
-}
-
-// FromatFields returns list of fields that should be included into the result
-func (q *Query) FromatFields() []string {
-	return q.fmtFields
+func (q *Query) GetFormatter() *Formatter {
+	return q.formatter
 }
 
 // Position returns position provided, or head, if the position was skipped in

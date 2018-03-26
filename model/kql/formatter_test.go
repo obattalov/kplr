@@ -2,6 +2,7 @@ package kql
 
 import (
 	"fmt"
+	"reflect"
 	"testing"
 
 	"github.com/kplr-io/container/btsbuf"
@@ -14,7 +15,7 @@ func testEcho(varName string, escape bool) string {
 	return varName
 }
 
-func testPositive(t *testing.T, fm, exp string) {
+func testPositive(t *testing.T, fm, exp string) *Formatter {
 	f, err := NewFormatter(fm, testEcho)
 	if err != nil {
 		t.Fatal("Unexpected err=", err)
@@ -27,6 +28,8 @@ func testPositive(t *testing.T, fm, exp string) {
 	if res != exp {
 		t.Fatal("res=", res, ", but expected=", exp)
 	}
+
+	return f
 }
 
 func testNegative(t *testing.T, fm string) {
@@ -50,6 +53,21 @@ func TestFormatterOk(t *testing.T) {
 	testPositive(t, "{a}{b}", "ab")
 	testPositive(t, "{a}{{b}}", "a\"b\"")
 	testPositive(t, "abc_{}{}_def", "abc__def")
+
+	f := testPositive(t, "a", "a")
+	if len(f.ftkns) != 1 || !reflect.DeepEqual(*f.ftkns[0], fmtToken{tt: cFmtTknConst, bv: []byte("a")}) {
+		t.Fatal("wrong ftns[0]=", *f.ftkns[0])
+	}
+
+	f = testPositive(t, "a{a}", "aa")
+	if len(f.ftkns) != 2 || !reflect.DeepEqual(*f.ftkns[1], fmtToken{tt: cFmtTknVar, varName: "a"}) {
+		t.Fatal("wrong ftns[1]=", *f.ftkns[1])
+	}
+
+	f = testPositive(t, "a{{a}}", "a\"a\"")
+	if len(f.ftkns) != 2 || !reflect.DeepEqual(*f.ftkns[1], fmtToken{tt: cFmtTknVar, varName: "a", escaping: true}) {
+		t.Fatal("wrong ftns[1]=", *f.ftkns[1])
+	}
 }
 
 func TestFormatterNotOk(t *testing.T) {

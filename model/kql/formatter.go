@@ -114,6 +114,12 @@ func NewFormatter(fmtStr string, fmtVarVal FmtVarValueF) (*Formatter, error) {
 	return &Formatter{fvf: fmtVarVal, ftkns: ftkns}, nil
 }
 
+// WithFunc gets a variable value provider and returns new formatter based
+// on the existing compliled one with the function
+func (f *Formatter) WithFunc(fn FmtVarValueF) *Formatter {
+	return &Formatter{fvf: fn, ftkns: f.ftkns}
+}
+
 // Format method will write result to provided Concatenator c.
 func (f *Formatter) Format(c *btsbuf.Concatenator) {
 	for _, t := range f.ftkns {

@@ -11,8 +11,8 @@ func TestParse(t *testing.T) {
 	testOk(t, "select limit 120")
 	testOk(t, "select limit 100")
 	testOk(t, "select offset 123 limit 100")
-	testOk(t, "select format 'text' limit 100")
-	testOk(t, "select format 'json' position tail limit 100")
+	testOk(t, "select 'text' limit 100")
+	testOk(t, "select 'json' position tail limit 100")
 	testOk(t, "select position head limit 100")
 	testOk(t, "select position asdf limit 100")
 	testOk(t, "select position 'hasdf123' limit 100")
@@ -29,47 +29,40 @@ func TestParse(t *testing.T) {
 	testOk(t, "SELECT FROM a, b, *c WHERE filename=\"system.log\" or filename=\"wifi.log\" OFFSET 0 LIMIT -1")
 	testOk(t, "SELECT FROM a, b, *c WHERE filename=\"system.log\" or filename=\"wifi.log\" OFFSET 0 LIMIT -1")
 	testOk(t, "SELECT FROM a, b, *c WHERE 'from'='this is tag value' or filename=\"wifi.log\" OFFSET 0 LIMIT -1")
-	testOk(t, "SELECT a, b FROM a, b, *c WHERE filename=\"system.log\" or filename=\"wifi.log\" OFFSET 0 LIMIT -1")
+	testOk(t, "SELECT FROM a, b, *c WHERE filename=\"system.log\" or filename=\"wifi.log\" OFFSET 0 LIMIT -1")
 }
 
 func TestParams(t *testing.T) {
-	s := testOk(t, "Select format 'abc' where a = '123' position tail offset -10 limit 13")
+	s := testOk(t, "Select 'abc' where a = '123' position tail offset -10 limit 13")
 	if !reflect.DeepEqual(s.Format, kplr.GetStringPtr("abc")) || s.Position.PosId != "tail" || *s.Offset != -10 || s.Limit != 13 {
 		t.Fatal("Something goes wrong ", s)
 	}
 }
 
 func TestPosition(t *testing.T) {
-	s := testOk(t, "Select format 'abc' where a = '123' position 'tail' offset -10 limit 13")
+	s := testOk(t, "Select 'abc' where a = '123' position 'tail' offset -10 limit 13")
 	if s.Position.PosId != "tail" {
 		t.Fatal("Something goes wrong ", s)
 	}
 
-	s = testOk(t, "Select format 'abc' where a = '123' position tail offset -10 limit 13")
+	s = testOk(t, "Select 'abc' where a = '123' position tail offset -10 limit 13")
 	if s.Position.PosId != "tail" {
 		t.Fatal("Something goes wrong ", s)
 	}
 
 	posId := "AAAABXNyY0lkAAAE0gAAAAAAAeIqAAAAGHNyYzEyMzQ3OUAkJV8gQTIzNEF6cUlkMgAAAA4AAAAAAAAE0g=="
-	s = testOk(t, "Select format 'abc' where a = '123' position '"+posId+"' offset -10 limit 13")
+	s = testOk(t, "Select 'abc' where a = '123' position '"+posId+"' offset -10 limit 13")
 	if s.Position.PosId != posId {
 		t.Fatal("Something goes wrong ", s)
 	}
 }
 
-func TestSelect(t *testing.T) {
-	testSelectFieldsList(t, "select limit 10", nil)
-	testSelectFieldsList(t, "select a limit 10", &NamesList{[]*NamesListItem{&NamesListItem{"a"}}})
-	testSelectFieldsList(t, "select a from b, c limit 10", &NamesList{[]*NamesListItem{&NamesListItem{"a"}}})
-	testSelectFieldsList(t, "select a,'b' from b, c limit 10", &NamesList{[]*NamesListItem{&NamesListItem{"a"}, &NamesListItem{"b"}}})
-}
-
 func TestFormat(t *testing.T) {
 	testFormat(t, "select limit 10", nil)
-	testFormat(t, "select format 'text\"' limit 10", kplr.GetStringPtr("text\""))
-	testFormat(t, "select format 't\\'ext' limit 10", kplr.GetStringPtr("t'ext"))
-	testFormat(t, "select format \"t\\\"ext\" limit 10", kplr.GetStringPtr("t\"ext"))
-	testFormat(t, "select format \"{\\\"msg\\\": \\\"%{msg}%\\\"}\" limit 10", kplr.GetStringPtr("{\"msg\": \"%{msg}%\"}"))
+	testFormat(t, "select 'text\"' limit 10", kplr.GetStringPtr("text\""))
+	testFormat(t, "select 't\\'ext' limit 10", kplr.GetStringPtr("t'ext"))
+	testFormat(t, "select \"t\\\"ext\" limit 10", kplr.GetStringPtr("t\"ext"))
+	testFormat(t, "select \"{\\\"msg\\\": \\\"%{msg}%\\\"}\" limit 10", kplr.GetStringPtr("{\"msg\": \"%{msg}%\"}"))
 }
 
 func testFormat(t *testing.T, kql string, val *string) {
@@ -80,17 +73,6 @@ func testFormat(t *testing.T, kql string, val *string) {
 
 	if !reflect.DeepEqual(s.Format, val) {
 		t.Fatal("Seems like they are different ", s.Format, " ", val)
-	}
-}
-
-func testSelectFieldsList(t *testing.T, kql string, fldsList *NamesList) {
-	s, err := Parse(kql)
-	if err != nil {
-		t.Fatal("kql=\"", kql, "\" unexpected err=", err)
-	}
-
-	if !reflect.DeepEqual(s.Fields, fldsList) {
-		t.Fatal("Seems like they are different ", s.Fields, fldsList)
 	}
 }
 

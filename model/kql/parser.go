@@ -15,7 +15,6 @@ var (
 		`|(?P<Keyword>(?i)SELECT|FORMAT|FROM|WHERE|POSITION|LIMIT|OFFSET|AND|OR|LIKE|CONTAINS|PREFIX|SUFFIX|NOT)`+
 		`|(?P<Ident>[a-zA-Z0-9-_@#$%?&*{}]+)`+
 		`|(?P<String>'(\\.|[^'])*'|"(\\.|[^"])*")`+
-		//`|(?P<String>'[^']*'|"[^"]*")`+
 		`|(?P<Operator><>|!=|<=|>=|[-+*/%,.=<>()])`,
 	)), "Keyword"), "String")
 	parser     = participle.MustBuild(&Select{}, kqlLexer)
@@ -33,8 +32,7 @@ type (
 	Int int64
 
 	Select struct {
-		Fields   *NamesList  `"SELECT" [@@]`
-		Format   *string     `["FORMAT" (@String|@Ident)]`
+		Format   *string     `"SELECT" [(@String|@Ident)]`
 		From     *NamesList  `["FROM" @@]`
 		Where    *Expression `["WHERE" @@]`
 		Position *Position   `["POSITION" @@]`

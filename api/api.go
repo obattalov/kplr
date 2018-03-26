@@ -480,11 +480,9 @@ func (ra *RestApi) newCursorByQuery(kqlTxt string) (cursor.Cursor, *kql.Query, e
 
 	id := atomic.AddInt32(&ra.rdsCnt, 1)
 	cur, err := ra.CursorProvider.NewCursor(&cursor.CursorSettings{
-		CursorId:     strconv.Itoa(int(id)),
-		Sources:      jrnls,
-		FmtJson:      qry.FormatJson(),
-		FmtFields:    qry.FromatFields(),
-		FmtQuotation: false,
+		CursorId:  strconv.Itoa(int(id)),
+		Sources:   jrnls,
+		Formatter: qry.GetFormatter(),
 	})
 	if err != nil {
 		return cur, qry, err
