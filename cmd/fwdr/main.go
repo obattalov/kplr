@@ -57,7 +57,7 @@ type (
 	Forwarder struct {
 		config 		*Config
 		logger 		log4g.Logger
-		curID		int64
+		KQL			string
 		httpClient	*http.Client
 		ctx 		context.Context
 		ctxCancel 	context.CancelFunc
@@ -126,9 +126,10 @@ func main() {
 func NewForwarder(cfg *Config) (*Forwarder , error) {
 
 	fwdr := new (Forwarder)
-	fwdr.config = cfg
-	fwdr.logger = log4g.GetLogger("fwdr-" + cfg.LogTag)
-	fwdr.httpClient = new(http.Client)
+//	fwdr.config = cfg
+	fwdr.KQL = "select from '" + cfg.Journal + "'"
+
+	fwdr.logger = log4g.GetLogger("Forwarder [" + cfg.Journal + "]")
 	fwdr.ctx, fwdr.ctxCancel = context.WithCancel(context.Background())
 
 	rsysWriter, err := syslog.Dial("tcp", cfg.RecieverIP, cfg.LogPriority, cfg.LogTag) //rsyslog writer
@@ -137,53 +138,27 @@ func NewForwarder(cfg *Config) (*Forwarder , error) {
 		return nil, err
 	}
 
-	var curID int64 = 0 //gettig cursor id from key-value store or config-file
-	if curID == 0 {
-		uv := url.Values{}
-		uv.Set("",fwdr.config.KQL)
-		resp, err := fwdr.httpClient.PostForm(fwdr.config.AgregatorIP + "/cursor", uv)
-		if err != nil {
-			fwdr.logger.Info("Could not get a new cursor. Error =", err)
-			return nil, err
-		}
 
-
-		//func ReadAtLeast(r Reader, buf []byte, min int) (n int, err error)
-		//func (c *Client) PostForm(url string, data url.Values) (resp *Response, err error)
-		/*
-		type Response struct {
-			StatusCode int    // e.g. 200
-			Body io.ReadCloser
-			ContentLength int64
-			}
-		*/
-		//func Unmarshal(data []byte, v interface{}) error
-
-		resp_j := make(map[string]someValues)
-		err = ResponseToJSON(resp, &resp_j)
-
-		if err != nil {
-			fwdr.logger.Info("Could not get JSON from agregator response. Error =", err)
-			return nil, err			
-		}
-
-		curID, _ = resp_j[cursorIDfield].(int64) //type assertion
-		fwdr.savedData.Reset() //put here remained logs data
-	}
-	fwdr.curID = curID
 	fwdr.w = io.MultiWriter(&fwdr.savedData, rsysWriter)
 	return fwdr, nil
 }
 
 
 func (fwdr *Forwarder) ForwardData() error {
+
+	
+	
+	var buf bytes.Buffer
 	if fwdr.NoSavedData() {
 	//if no saved data
-		resp, err := fwdr.httpClient.Get(fwdr.config.AgregatorIP + "/cursors:" + string(fwdr.curID))
+		get_req := fwdr.config.AgregatorIP + "/logs?\"" + string(fwdr.KQL) + "\""
+		fwdr.logger.Warn("Trying to get " + get_req)
+		resp, err := http.Get(get_req)
 		if err != nil {
 			fwdr.logger.Error("Error while getting data by /cursors:. Error = ", err)
 			return err
 		}
+
 		_, err = io.Copy(fwdr.w, resp.Body)
 		if err != nil {
 			fwdr.logger.Error("Error while sending/saving data. Error = ", err)

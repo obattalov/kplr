@@ -5,19 +5,19 @@
 
 	"Journals"		: 	[	
 		{
-			"journal":		"dpkg.log",
+			"Journal":		"dpkg.log",
 
 			"LogPriority": 	100,
 			"LogTag":		"dpkg"
 		},
 		{
-			"journal":		"krnl.log",
+			"Journal":		"krnl.log",
 
 			"LogPriority": 	105,
 			"LogTag":		"krnl"
 		},
 		{
-			"journal":		"auth.log",
+			"Journal":		"auth.log",
 
 			"LogPriority": 	110,
 			"LogTag":		"auth"
