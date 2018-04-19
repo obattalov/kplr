@@ -1,129 +1,148 @@
 package main
 
 import (
-	"context"
-	"os"
-	"os/signal"
-
-	"github.com/jrivets/log4g"
-	"github.com/kplr-io/kplr"
+"fmt"
+"io"
+"net/http"
+"bytes"
+"log/syslog"
+"os"
+"os/signal"
 )
 
+type (
+
+	someValues struct {
+		AgregatorIP	string
+		RecieverIP	string
+		Journals 	[]JDesc
+
+	}
+
+	iForwarder interface {
+		NoSavedData()	bool
+		ClearSavedData()
+	}
+
+	JDesc struct {
+		Journal		string
+		LogPriority int
+		LogTag		string
+	}
+
+	Config struct {
+		Journal		string
+
+		AgregatorIP	string
+
+		RecieverIP	string
+		LogPriority int
+		LogTag		string
+	}
+
+)
+
+
+func main1() {
+
+	var cfg []Config
+
+	var cfg_arr = someValues{
+		AgregatorIP	:	"127.0.0.1:8080",
+
+		RecieverIP	:	"127.0.0.1:5000",
+
+		Journals	: 	[]JDesc{{	
+				Journal:		"dpkg.log",
+
+		LogPriority: 	100,
+		LogTag:		"dpkg"},
+		{			Journal:		"krnl.log",
+
+		LogPriority: 	105,
+		LogTag:		"krnl"},
+		{				Journal:		"auth.log",
+
+		LogPriority: 	110,
+		LogTag:		"auth"}}}
+
+
+	for _, cfgi := range cfg_arr.Journals {
+		var cfgc Config
+
+		if cfgi.Journal == "" {
+			fmt.Printf("Error in Journal description: no Journal name")
+			return
+		}
+		if cfgi.LogPriority == 0 {
+			fmt.Printf("Error in Journal description: no LogPriority (int)")
+			return
+		}
+		if cfgi.LogTag == "" {
+			fmt.Printf("Error in Journal description: no LogTag value")
+			return
+		}
+		cfgc.Journal = cfgi.Journal
+		cfgc.LogPriority = cfgi.LogPriority
+		cfgc.LogTag = cfgi.LogTag		
+		cfgc.RecieverIP 	= cfg_arr.RecieverIP
+		cfgc.AgregatorIP 	= cfg_arr.AgregatorIP
+		cfg = append(cfg, cfgc)
+	}
+	//fmt.Printf("%s", cfg)
+	return
+}
+
 func main() {
-	cfg, err := parseCLP()
+	var (
+		savedData bytes.Buffer
+		RecieverIP = "127.0.0.1:5000"
+		AgregatorIP = "http://127.0.0.1:8080"
+		)
+
+	rsysWriter, err := syslog.Dial("tcp", RecieverIP, 100, "test_log_tag") //rsyslog writer
 	if err != nil {
-		return
-	}
-	defer log4g.Shutdown()
-
-	if cfg == nil {
+		fmt.Printf("Could not create r-sys-log writer. Error = %s\n", err)
 		return
 	}
 
-	kplr.DefaultLogger.Info("Kepler is starting...")
-	injector := inject.NewInjector(log4g.GetLogger("kplr.injector"), log4g.GetLogger("fb.injector"))
+	KQL := "select from kern.log position tail offset 5 limit -1"
+	w := io.MultiWriter(&savedData, rsysWriter, os.Stdout)
 
-	mainCtx, cancel := context.WithCancel(context.Background())
-	defer kplr.DefaultLogger.Info("Exiting. kplr main context is shutdown.")
-	defer injector.Shutdown()
-	defer cancel()
-
-	fwdr, err := forwarder.NewAgregator(&forwarder.Config{
-		IP: cfg.AgregatorIP,
-		JournalName: cfg.JournalName,
-		CurStartPos: curStartPos})
-
-	injector.RegisterOne(fwdr, "fwdr")
-
-	injector.Construct()	
+	get_req := AgregatorIP + "/logs?kql=" + string(KQL)
+	fmt.Printf("Trying to get %s\n", get_req)
+	resp, err := http.Get(get_req)
+	if err != nil {
+		fmt.Printf("Could not get request. Error = %s\n", err)
+		return				
+	}
+	defer resp.Body.Close()
+	go func(r *http.Response) {
+//		for {
+			fmt.Println("cycle")
+			n, err := io.Copy(w, r.Body)
+			if err != nil {
+				fmt.Printf("Error while copying = %s\n", err)
+				return				
+			}
+			fmt.Printf("Copied %v bytes\n", n)
+//		}
+	}(resp)
 
 	signalChan := make(chan os.Signal, 1)
 	signal.Notify(signalChan, os.Interrupt)
-
-	//parametres:
-	//- config filename (default config.json)
-	//reading config:
-	//- access to agregator
-	//- rsyslog sending parametres
-	//- the name of last read record key in kubernetes
-	//getting a number of last read record from kubernetes
-	//creating a channel
-
-	<-signalChan // wait signals
-	log.Printf("Shutting down...")
-
-	close(stop) // stop gorutines
-	wg.Wait()   // wait until everything's stopped
-
-}
-
-///// work with io http
-/*
-package main
-
-import (
-	"net/http"
-//	"bytes"
-	"fmt"
-	"encoding/json"
-	"net/url"
-	"io"
-	
-)
-
-type myHttpResponse http.Response
-
-type (
-	myValues interface{}
-)
-*/
-/*
-//workable
-func main() {
-	var buf bytes.Buffer
-	hc := &http.Client{}
-	resp, _ := hc.Get("http://localhost:8080/journals")
-	n, _ := buf.ReadFrom(resp.Body)
-	fmt.Printf("Read %v bytes\n", n)
-	fmt.Println(buf.String())
-
-	jresp := make(map[string]myValues)
-	bts := make([]byte, n)
-	n1, _ := buf.Read(bts)
-	fmt.Printf("n = %v\n", n1)
-	err := json.Unmarshal(bts, &jresp)
-	if err != nil {
-		fmt.Println(err)
-	}
-	fmt.Println("jresp = ", jresp)
-	for k, v := range jresp {
-		fmt.Printf("%v = %v\n", k, v)
+	select {
+	case <-signalChan:
+		fmt.Println("Interrupt signal is received")
 	}
 
-
 }
-*/
+
 /*
-func main() {
-	hc := &http.Client{}
-	data := url.Values{}
-	data.Set("__source_id__", "dkpg.log")
-	jresp := make(map[string]myValues)
 
-	resp, _ := hc.PostForm("http://localhost:8080/cursors",data)
-	ToJSON(resp, &jresp)
+curl -XGET -d 'select "\\{\"msg\": {{msg}}\\}\n" from "system.log" limit 10'  localhost:8080/logs
+т.е. можно писать так 
+select <fmt string> from <journals> were ... limit...
+fmt string это строчка, в которой переменные в {}
 
-	for k, v := range jresp {
-		fmt.Printf("%v = %v\n", k, v)
-	}
-
-
-}
-
-func ResponseToJSON(resp *http.Response, jresp *map[string]myValues) {
-	buf := make ([]byte, resp.ContentLength)
-	_, _ = io.ReadFull(resp.Body, buf)
-	_ = json.Unmarshal(buf, jresp)
-
-}
 */
