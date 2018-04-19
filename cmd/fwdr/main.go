@@ -1,28 +1,14 @@
 package main
 
 import (
-	"context"
-	"os"
-	"os/signal"
-	"net/http"
-	"net/url"
-	"encoding/json"
-	"log/syslog"
-	"bytes"
-	"io"
-	"io/ioutil"
-	"errors"
-	"fmt"
-
-	"github.com/jrivets/log4g"
+"fmt"
+"io"
+"net/http"
+"bytes"
+"log/syslog"
+"os"
+"os/signal"
 )
-
-const (
-	cursorIDfield = "curID"
-	defaultConfigFile = "config.json"
-	)
-
-type myHttpResponse http.Response
 
 type (
 
@@ -40,7 +26,7 @@ type (
 
 	JDesc struct {
 		Journal		string
-		LogPriority syslog.Priority
+		LogPriority int
 		LogTag		string
 	}
 
@@ -50,189 +36,51 @@ type (
 		AgregatorIP	string
 
 		RecieverIP	string
-		LogPriority syslog.Priority
+		LogPriority int
 		LogTag		string
-	}
-
-	Forwarder struct {
-		config 		*Config
-		logger 		log4g.Logger
-		KQL			string
-		httpClient	*http.Client
-		ctx 		context.Context
-		ctxCancel 	context.CancelFunc
-		savedData 	bytes.Buffer
-		r 			io.Reader
-		w 			io.Writer
 	}
 
 )
 
-var FLogger = log4g.GetLogger("Forwarder")
 
-func main() {
-	configs, err := parseCLP()
-	if err != nil {
-		FLogger.Error("Could not parse config file. Err: ", err)
-		return
-	}
+func main1() {
 
-	if len(configs) == 0 {
-		FLogger.Warn("No configurated forwarders")
-		return
-	}
+	var cfg []Config
 
-	for _, cur_cfg := range configs { //goroutines for each config-record
+	var cfg_arr = someValues{
+		AgregatorIP	:	"127.0.0.1:8080",
 
+		RecieverIP	:	"127.0.0.1:5000",
 
-		go func(cur_cfg *Config) {
-			fwdr, err := NewForwarder(cur_cfg)
-			if err != nil {
-				FLogger.Error(fmt.Sprintf("Could not create forwarder %v. Err = %s", cur_cfg.LogTag, err))
-				return
-			}
-			fwdr.logger.Info("Initializing forwarder " + cur_cfg.LogTag)
-			defer fwdr.logger.Info("Forwarder " + cur_cfg.LogTag + " is over.")
-		L1:
-			for {
-				select {
-				case <-fwdr.ctx.Done():
-					break L1
-				default:
-					fwdr.ForwardData()
-				}
-			}
-		}(&cur_cfg)
+		Journals	: 	[]JDesc{{	
+				Journal:		"dpkg.log",
 
+		LogPriority: 	100,
+		LogTag:		"dpkg"},
+		{			Journal:		"krnl.log",
 
+		LogPriority: 	105,
+		LogTag:		"krnl"},
+		{				Journal:		"auth.log",
 
-	}
+		LogPriority: 	110,
+		LogTag:		"auth"}}}
 
-	signalChan := make(chan os.Signal, 1)
-	signal.Notify(signalChan, os.Interrupt)
-	select {
-	case <-signalChan:
-		FLogger.Warn("Interrupt signal is received")
-	}
-
-
-}
-
-
-
-
-
-
-func NewForwarder(cfg *Config) (*Forwarder , error) {
-
-	fwdr := new (Forwarder)
-//	fwdr.config = cfg
-	fwdr.KQL = "select from '" + cfg.Journal + "'"
-
-	fwdr.logger = log4g.GetLogger("Forwarder [" + cfg.Journal + "]")
-	fwdr.ctx, fwdr.ctxCancel = context.WithCancel(context.Background())
-
-	rsysWriter, err := syslog.Dial("tcp", cfg.RecieverIP, cfg.LogPriority, cfg.LogTag) //rsyslog writer
-	if err != nil {
-		fwdr.logger.Info("Could not create r-sys-log writer. Error =", err)
-		return nil, err
-	}
-
-
-	fwdr.w = io.MultiWriter(&fwdr.savedData, rsysWriter)
-	return fwdr, nil
-}
-
-
-func (fwdr *Forwarder) ForwardData() error {
-
-	
-	
-	var buf bytes.Buffer
-	if fwdr.NoSavedData() {
-	//if no saved data
-		get_req := fwdr.config.AgregatorIP + "/logs?\"" + string(fwdr.KQL) + "\""
-		fwdr.logger.Warn("Trying to get " + get_req)
-		resp, err := http.Get(get_req)
-		if err != nil {
-			fwdr.logger.Error("Error while getting data by /cursors:. Error = ", err)
-			return err
-		}
-
-		_, err = io.Copy(fwdr.w, resp.Body)
-		if err != nil {
-			fwdr.logger.Error("Error while sending/saving data. Error = ", err)
-			return err
-		}
-		fwdr.ClearSavedData();
-		return nil
-	}
-	//if saved data exists
-		//sending data
-	if _, err := io.Copy(fwdr.w, &fwdr.savedData); err != nil {
-		fwdr.logger.Error("Error while sending data. Error = ", err)			
-		return err
-	}
-	fwdr.ClearSavedData()
-	return nil
-}
-
-func (fwdr *Forwarder) ClearSavedData() {
-	fwdr.savedData.Reset()
-}
-
-func (fwdr *Forwarder) NoSavedData() bool {
-	return fwdr.savedData.Len() == 0
-}
-
-
-func ResponseToJSON(resp *http.Response, jresp interface{}) error {
-	buf := make ([]byte, resp.ContentLength)
-	_, _ = io.ReadFull(resp.Body, buf)
-	err := json.Unmarshal(buf, jresp)
-	return err
-}
-
-func parseCLP() ([]Config, error) {
-	var filename = defaultConfigFile
-	if IsFileNotExist(filename) {
-		return nil, errors.New("No forwarders config file" + filename)
-	}
-
-	cfgData, err := ioutil.ReadFile(filename)
-	if err != nil {
-		return nil, errors.New(fmt.Sprintf("Could not read configuration file %v. Err = %s", filename, err))
-	}
-
-	var (
-		cfg []Config
-		cfg_arr someValues
-		)
-	err = json.Unmarshal(cfgData, cfg_arr)
-	if err != nil {
-		return nil, errors.New(fmt.Sprintf("Could not unmarshal data from %v. Err = %s", filename, err))
-	}
-	if cfg_arr.AgregatorIP == "" {
-		return nil, errors.New(fmt.Sprintf("Error in config file: no AgregatorIP value"))
-	}
-	if cfg_arr.RecieverIP == "" {
-		return nil, errors.New(fmt.Sprintf("Error in config file: no RecieverIP value"))
-	}
-	if cfg_arr.Journals == nil || len(cfg_arr.Journals) == 0 {
-		return nil, errors.New(fmt.Sprintf("Error in config file: no Journals description"))
-	}
 
 	for _, cfgi := range cfg_arr.Journals {
 		var cfgc Config
 
 		if cfgi.Journal == "" {
-			return nil, errors.New("Error in Journal description: no Journal name")
+			fmt.Printf("Error in Journal description: no Journal name")
+			return
 		}
 		if cfgi.LogPriority == 0 {
-			return nil, errors.New("Error in Journal description: no LogPriority (int)")
+			fmt.Printf("Error in Journal description: no LogPriority (int)")
+			return
 		}
 		if cfgi.LogTag == "" {
-			return nil, errors.New("Error in Journal description: no LogTag value")
+			fmt.Printf("Error in Journal description: no LogTag value")
+			return
 		}
 		cfgc.Journal = cfgi.Journal
 		cfgc.LogPriority = cfgi.LogPriority
@@ -241,85 +89,60 @@ func parseCLP() ([]Config, error) {
 		cfgc.AgregatorIP 	= cfg_arr.AgregatorIP
 		cfg = append(cfg, cfgc)
 	}
-
-	FLogger.Info("Configuration read from ", filename)
-
-	return cfg, nil
+	//fmt.Printf("%s", cfg)
+	return
 }
 
-func IsFileNotExist(filename string) bool {
-	_, err := os.Stat(filename)
-	return os.IsNotExist(err)
-}
-
-
-///// work with io http
-/*
-package main
-
-import (
-	"net/http"
-//	"bytes"
-	"fmt"
-	"encoding/json"
-	"net/url"
-	"io"
-	
-)
-
-type myHttpResponse http.Response
-
-type (
-	myValues interface{}
-)
-*/
-/*
-//workable
 func main() {
-	var buf bytes.Buffer
-	hc := &http.Client{}
-	resp, _ := hc.Get("http://localhost:8080/journals")
-	n, _ := buf.ReadFrom(resp.Body)
-	fmt.Printf("Read %v bytes\n", n)
-	fmt.Println(buf.String())
+	var (
+		savedData bytes.Buffer
+		RecieverIP = "127.0.0.1:5000"
+		AgregatorIP = "http://127.0.0.1:8080"
+		)
 
-	jresp := make(map[string]myValues)
-	bts := make([]byte, n)
-	n1, _ := buf.Read(bts)
-	fmt.Printf("n = %v\n", n1)
-	err := json.Unmarshal(bts, &jresp)
+	rsysWriter, err := syslog.Dial("tcp", RecieverIP, 100, "test_log_tag") //rsyslog writer
 	if err != nil {
-		fmt.Println(err)
-	}
-	fmt.Println("jresp = ", jresp)
-	for k, v := range jresp {
-		fmt.Printf("%v = %v\n", k, v)
+		fmt.Printf("Could not create r-sys-log writer. Error = %s\n", err)
+		return
 	}
 
+	KQL := "select from kern.log position tail offset 5 limit -1"
+	w := io.MultiWriter(&savedData, rsysWriter, os.Stdout)
+
+	get_req := AgregatorIP + "/logs?kql=" + string(KQL)
+	fmt.Printf("Trying to get %s\n", get_req)
+	resp, err := http.Get(get_req)
+	if err != nil {
+		fmt.Printf("Could not get request. Error = %s\n", err)
+		return				
+	}
+	defer resp.Body.Close()
+	go func(r *http.Response) {
+//		for {
+			fmt.Println("cycle")
+			n, err := io.Copy(w, r.Body)
+			if err != nil {
+				fmt.Printf("Error while copying = %s\n", err)
+				return				
+			}
+			fmt.Printf("Copied %v bytes\n", n)
+//		}
+	}(resp)
+
+	signalChan := make(chan os.Signal, 1)
+	signal.Notify(signalChan, os.Interrupt)
+	select {
+	case <-signalChan:
+		fmt.Println("Interrupt signal is received")
+	}
 
 }
-*/
+
 /*
-func main() {
-	hc := &http.Client{}
-	data := url.Values{}
-	data.Set("__source_id__", "dkpg.log")
-	jresp := make(map[string]myValues)
 
-	resp, _ := hc.PostForm("http://localhost:8080/cursors",data)
-	ToJSON(resp, &jresp)
+curl -XGET -d 'select "\\{\"msg\": {{msg}}\\}\n" from "system.log" limit 10'  localhost:8080/logs
+т.е. можно писать так 
+select <fmt string> from <journals> were ... limit...
+fmt string это строчка, в которой переменные в {}
 
-	for k, v := range jresp {
-		fmt.Printf("%v = %v\n", k, v)
-	}
-
-
-}
-
-func ResponseToJSON(resp *http.Response, jresp *map[string]myValues) {
-	buf := make ([]byte, resp.ContentLength)
-	_, _ = io.ReadFull(resp.Body, buf)
-	_ = json.Unmarshal(buf, jresp)
-
-}
 */

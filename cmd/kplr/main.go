@@ -17,8 +17,8 @@ import (
 	"github.com/kplr-io/kplr/zebra"
 	"gopkg.in/alecthomas/kingpin.v2"
 )
-
 func main() {
+
 	cfg, err := parseCLP()
 	if err != nil {
 		return

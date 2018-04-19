@@ -1,7 +1,7 @@
 {
-	"AgregatorIP"	:	"localhost:8080",
+	"AgregatorIP"	:	"127.0.0.1:8080",
 
-	"RecieverIP"	:	"localhost:5000",
+	"RecieverIP"	:	"127.0.0.1:5000",
 
 	"Journals"		: 	[	
 		{
