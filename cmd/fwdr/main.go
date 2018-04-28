@@ -43,8 +43,61 @@ type (
 
 )
 
-
 func main() {
+	var (
+		savedData bytes.Buffer
+		RecieverIP = kingpin.Flag("rsyslogip", "rsyslog server ip:port").Default("127.0.0.1:5000").Short('r').String()
+		AgregatorIP = kingpin.Flag("agregatorip","kepler agregator ip:port").Default("http://127.0.0.1:8080").Short('a').String()
+		JournalList = kingpin.Flag("journals","list of forwarded journals: jrnl1,jrnl2...").Short('j').Required().String()
+		LogTag = kingpin.Flag("logtag","logtag of rsyslog server event").Default("").Short('t').String()
+		LogPriority = kingpin.Flag("logpriority", "logpriority of rsyslog server event").Short('p').Int()
+		ConfigFile = kingpin.Flag("config","config file path").Short('f').ExistingFile()
+		)
+
+
+
+	rsysWriter, err := syslog.Dial("tcp", *RecieverIP, syslog.Priority(*LogPriority), *LogTag) //rsyslog writer
+	if err != nil {
+		fmt.Printf("Could not create r-sys-log writer. Error = %s\n", err)
+		return
+	}
+
+	KQL := "select from kern.log position tail offset 5 limit -1"
+	w := io.MultiWriter(&savedData, rsysWriter, os.Stdout)
+
+	get_req := *AgregatorIP + "/logs?kql=" + string(KQL)
+	fmt.Printf("Trying to get %s\n", get_req)
+	resp, err := http.Get(get_req)
+	if err != nil {
+		fmt.Printf("Could not get request. Error = %s\n", err)
+		return				
+	}
+	defer resp.Body.Close()
+	go func(r *http.Response) {
+//		for {
+			fmt.Println("cycle")
+			n, err := io.Copy(w, r.Body)
+			if err != nil {
+				fmt.Printf("Error while copying = %s\n", err)
+				return				
+			}
+			fmt.Printf("Copied %v bytes\n", n)
+//		}
+	}(resp)
+
+	signalChan := make(chan os.Signal, 1)
+	signal.Notify(signalChan, os.Interrupt)
+	select {
+	case <-signalChan:
+		fmt.Println("Interrupt signal is received")
+	}
+
+}
+
+
+
+
+func main1() {
 
 	var cfg []Config
 
@@ -94,55 +147,6 @@ func main() {
 	return
 }
 
-func main() {
-	var (
-		savedData bytes.Buffer
-		RecieverIP = kingpin.Flag("rsyslogip", "rsyslog server ip:port").Default("127.0.0.1:5000").Short("r").String()
-		AgregatorIP = kingpin.Flag("agregatorip","kepler agregator ip:port").Default("http://127.0.0.1:8080").Short("a").String()
-		JournalList = kingpin.Flag("journals","list of forwarded journals: jrnl1,jrnl2...").Short("j").Required().String()
-		LogTag = kingpin.Flag("logtag","logtag of rsyslog server event").Default("").Short("t").String()
-		LogPriority = kingpin.Flag("logpriority", "logpriority of rsyslog server event").Default(0).Short("p").Int()
-		)
-
-
-
-	rsysWriter, err := syslog.Dial("tcp", RecieverIP, LogPriority, LogTag) //rsyslog writer
-	if err != nil {
-		fmt.Printf("Could not create r-sys-log writer. Error = %s\n", err)
-		return
-	}
-
-	KQL := "select from kern.log position tail offset 5 limit -1"
-	w := io.MultiWriter(&savedData, rsysWriter, os.Stdout)
-
-	get_req := AgregatorIP + "/logs?kql=" + string(KQL)
-	fmt.Printf("Trying to get %s\n", get_req)
-	resp, err := http.Get(get_req)
-	if err != nil {
-		fmt.Printf("Could not get request. Error = %s\n", err)
-		return				
-	}
-	defer resp.Body.Close()
-	go func(r *http.Response) {
-//		for {
-			fmt.Println("cycle")
-			n, err := io.Copy(w, r.Body)
-			if err != nil {
-				fmt.Printf("Error while copying = %s\n", err)
-				return				
-			}
-			fmt.Printf("Copied %v bytes\n", n)
-//		}
-	}(resp)
-
-	signalChan := make(chan os.Signal, 1)
-	signal.Notify(signalChan, os.Interrupt)
-	select {
-	case <-signalChan:
-		fmt.Println("Interrupt signal is received")
-	}
-
-}
 
 /*
 
