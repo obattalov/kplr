@@ -8,6 +8,7 @@ import (
 "log/syslog"
 "os"
 "os/signal"
+"gopkg.in/alecthomas/kingpin.v2"
 )
 
 type (
@@ -43,7 +44,7 @@ type (
 )
 
 
-func main1() {
+func main() {
 
 	var cfg []Config
 
@@ -96,11 +97,16 @@ func main1() {
 func main() {
 	var (
 		savedData bytes.Buffer
-		RecieverIP = "127.0.0.1:5000"
-		AgregatorIP = "http://127.0.0.1:8080"
+		RecieverIP = kingpin.Flag("rsyslogip", "rsyslog server ip:port").Default("127.0.0.1:5000").Short("r").String()
+		AgregatorIP = kingpin.Flag("agregatorip","kepler agregator ip:port").Default("http://127.0.0.1:8080").Short("a").String()
+		JournalList = kingpin.Flag("journals","list of forwarded journals: jrnl1,jrnl2...").Short("j").Required().String()
+		LogTag = kingpin.Flag("logtag","logtag of rsyslog server event").Default("").Short("t").String()
+		LogPriority = kingpin.Flag("logpriority", "logpriority of rsyslog server event").Default(0).Short("p").Int()
 		)
 
-	rsysWriter, err := syslog.Dial("tcp", RecieverIP, 100, "test_log_tag") //rsyslog writer
+
+
+	rsysWriter, err := syslog.Dial("tcp", RecieverIP, LogPriority, LogTag) //rsyslog writer
 	if err != nil {
 		fmt.Printf("Could not create r-sys-log writer. Error = %s\n", err)
 		return
