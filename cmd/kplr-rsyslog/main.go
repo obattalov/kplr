@@ -21,7 +21,7 @@ func main() {
 	var (
 		RecieverIP = kingpin.Flag("rsyslogip", "rsyslog server ip:port").Short('r').Default("127.0.0.1:514").String()
 		AgregatorIP = kingpin.Flag("agregatorip","kepler agregator ip:port").Default("127.0.0.1:8080").Short('a').String()
-		JournalList = kingpin.Flag("journals","list of forwarded journals: jrnl1,jrnl2...").Short('j').Default("auth.log").String()
+		JournalList = kingpin.Flag("journals","list of forwarded journals: jrnl1,jrnl2...").Short('j').Required().String()
 		LogTag = kingpin.Flag("logtag","logtag of rsyslog server event").Default("").Short('t').String()
 		LogPriority = kingpin.Flag("logpriority", "logpriority of rsyslog server event").Short('p').Default("0").Int()
 		raw_query string
