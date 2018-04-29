@@ -38,7 +38,7 @@ func main() {
 
 	journals := strings.Split(*JournalList, ",")
 	for _, v := range journals {
-		raw_query += "from=" + v + ""
+		raw_query += "from=" + v + "&"
 	}
 
 	resp, err := http.Get(*AgregatorIP + "/logs?" + raw_query)
