@@ -21,16 +21,17 @@ type kql_json struct {
 
 func main() {
 	var (
-		RecieverIP = kingpin.Flag("rsyslogip", "rsyslog server ip:port").Short('r').Default("127.0.0.1:5000").String()
-		AgregatorIP = kingpin.Flag("agregatorip","kepler agregator ip:port").Default("http://127.0.0.1:8080").Short('a').String()
+		RecieverIP = kingpin.Flag("rsyslogip", "rsyslog server ip:port").Short('r').Default("127.0.0.1:514").String()
+		AgregatorIP = kingpin.Flag("agregatorip","kepler agregator ip:port").Default("127.0.0.1:8080").Short('a').String()
 		JournalList = kingpin.Flag("journals","list of forwarded journals: jrnl1,jrnl2...").Short('j').Required().String()
 		LogTag = kingpin.Flag("logtag","logtag of rsyslog server event").Default("").Short('t').String()
-		LogPriority = kingpin.Flag("logpriority", "logpriority of rsyslog server event").Short('p').Int()
+		LogPriority = kingpin.Flag("logpriority", "logpriority of rsyslog server event").Short('p').Default("0").Int()
 //		ConfigFile = kingpin.Flag("config","config file path").Short('f').ExistingFile()
 		raw_query string
 		)
 
 	kingpin.Parse()
+	*AgregatorIP = "http://" + *AgregatorIP
 
 	//*RecieverIP = "127.0.0.1:5000"
 
@@ -60,25 +61,19 @@ func main() {
 	w := io.MultiWriter(rsysWriter, os.Stdout)
 	r := bufio.NewReader(resp.Body)
 
+
+	go func(){
+		_, err := io.Copy(w, r)
+		if err != nil {
+			fmt.Printf("Error while copying = %s\n", err)
+			return				
+		}
+	}()
+		
 	signalChan := make(chan os.Signal, 1)
 	signal.Notify(signalChan, os.Interrupt)
-//	for {
-		select {
-		case <-signalChan:
-			fmt.Println("Interrupt signal is received")
-		default:
-			fmt.Println("cycle")
-			n, err := io.Copy(w, r)
-			if err != nil {
-				fmt.Printf("Error while copying = %s\n", err)
-				return				
-			}
-			fmt.Printf("Copied %v bytes\n", n)
-		}
-//	}
-
-
-
+	<-signalChan
+	fmt.Println("Interrupt signal is received")
 }
 
 
